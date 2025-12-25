@@ -1,0 +1,52 @@
+# Node modules
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Dist
+dist/
+build/
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/terraform.tfvars
+**/.terraformrc
+**/terraform.rc
+
+# EXCEPT: Keep firstRunCreateBucket local state (important!)
+!deployment/firstRunCreateBucket/**/terraform.tfstate
+!deployment/firstRunCreateBucket/**/terraform.tfstate.backup
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# AWS
+.aws/
+
+# Secrets
+**/secrets.json
+**/credentials.json

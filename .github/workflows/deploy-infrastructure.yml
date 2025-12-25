@@ -1,0 +1,143 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Infrastructure module to deploy'
+        required: true
+        type: choice
+        options:
+          - general
+          - database
+          - cognito
+          - authorizer
+          - api-gateway
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - ppe
+          - prod
+
+env:
+  AWS_REGION: ap-south-1
+  TERRAFORM_VERSION: '1.5.7'
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.module }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}
+        run: |
+          echo "Initializing Terraform for ${{ inputs.module }} in ${{ inputs.environment }}"
+          terraform init
+
+      - name: Terraform Validate
+        working-directory: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}
+        run: |
+          echo "Validating Terraform configuration"
+          terraform validate
+
+      - name: Terraform Plan
+        working-directory: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}
+        run: |
+          echo "Planning Terraform changes"
+          terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}
+        run: |
+          echo "Applying Terraform changes"
+          terraform apply -auto-approve tfplan
+
+      - name: Terraform Output
+        id: terraform_outputs
+        working-directory: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}
+        run: |
+          echo "Getting Terraform outputs"
+          terraform output -json > outputs.json
+          cat outputs.json
+
+      - name: Upload Terraform outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs-${{ inputs.module }}-${{ inputs.environment }}
+          path: deployment/${{ inputs.module }}/environments/${{ inputs.environment }}/outputs.json
+          retention-days: 30
+
+      - name: Deployment summary
+        run: |
+          echo "## Infrastructure Deployment Complete! :building_construction:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Module:** ${{ inputs.module }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Module-specific next steps
+          case "${{ inputs.module }}" in
+            general)
+              echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+              echo "- Deploy database: \`./nx deploy infra database ${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- Deploy Cognito: \`./nx deploy infra cognito ${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+              ;;
+            database)
+              echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+              echo "- Verify RDS connectivity" >> $GITHUB_STEP_SUMMARY
+              echo "- Create database schema (run migrations)" >> $GITHUB_STEP_SUMMARY
+              ;;
+            cognito)
+              echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+              echo "- Note User Pool ID and Client ID for Lambda configuration" >> $GITHUB_STEP_SUMMARY
+              ;;
+            authorizer)
+              echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+              echo "- Update authorizer Lambda code: \`./nx deploy authorizer ${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+              ;;
+            api-gateway)
+              echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+              echo "- Deploy Lambda apps: \`./nx deploy auth ${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- Test health endpoint: \`curl <api-url>/health\`" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### View Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch logs: \`aws logs describe-log-groups --region ${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Terraform state: \`cd deployment/${{ inputs.module }}/environments/${{ inputs.environment }} && terraform show\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deployment success notification
+        if: success()
+        run: |
+          echo "✅ Successfully deployed ${{ inputs.module }} to ${{ inputs.environment }}"
+
+      - name: Deployment failure notification
+        if: failure()
+        run: |
+          echo "❌ Failed to deploy ${{ inputs.module }} to ${{ inputs.environment }}"
+          echo "Check the logs above for details"
+          exit 1
