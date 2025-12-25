@@ -1,0 +1,14 @@
+{
+  "name": "rtr-job",
+  "version": "1.0.0",
+  "description": "Job management service for RTR API",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"No tests yet\" && exit 0",
+    "zip": "zip -r ../lambda.zip ."
+  },
+  "keywords": ["lambda", "job", "crud"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {}
+}

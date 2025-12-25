@@ -1,0 +1,135 @@
+name: Deploy Lambda Application
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Lambda application to deploy'
+        required: true
+        type: choice
+        options:
+          - auth
+          - authorizer
+          - job
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - ppe
+          - prod
+
+env:
+  AWS_REGION: ap-south-1
+  NODE_VERSION: '18'
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.app_name }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        working-directory: apps/${{ inputs.app_name }}/src
+        run: |
+          echo "Installing dependencies for ${{ inputs.app_name }}"
+          npm ci --production
+
+      - name: Run tests
+        working-directory: apps/${{ inputs.app_name }}/src
+        run: |
+          echo "Running tests"
+          npm test
+
+      - name: Build Lambda package
+        working-directory: apps/${{ inputs.app_name }}/src
+        run: |
+          echo "Creating Lambda deployment package"
+          zip -r ../lambda.zip . -x "*.git*" -x "node_modules/.cache/*" -x "*.md"
+          echo "Package created successfully"
+
+      - name: Verify package
+        run: |
+          echo "Package details:"
+          ls -lh apps/${{ inputs.app_name }}/lambda.zip
+          PACKAGE_SIZE=$(ls -lh apps/${{ inputs.app_name }}/lambda.zip | awk '{print $5}')
+          echo "Package size: $PACKAGE_SIZE"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Determine Terraform directory
+        id: terraform_dir
+        run: |
+          if [ "${{ inputs.app_name }}" == "authorizer" ]; then
+            echo "dir=deployment/authorizer/environments/${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "dir=apps/${{ inputs.app_name }}/deploy/environments/${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform Init
+        working-directory: ${{ steps.terraform_dir.outputs.dir }}
+        run: |
+          echo "Initializing Terraform for ${{ inputs.app_name }} in ${{ inputs.environment }}"
+          terraform init
+
+      - name: Terraform Plan
+        working-directory: ${{ steps.terraform_dir.outputs.dir }}
+        run: |
+          echo "Planning Terraform changes"
+          terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ steps.terraform_dir.outputs.dir }}
+        run: |
+          echo "Applying Terraform changes"
+          terraform apply -auto-approve tfplan
+
+      - name: Get Terraform outputs
+        id: terraform_outputs
+        working-directory: ${{ steps.terraform_dir.outputs.dir }}
+        run: |
+          echo "Deployment complete - Getting outputs"
+          terraform output -json > outputs.json
+
+          # Extract Lambda function ARN if available
+          if terraform output lambda_function_arn 2>/dev/null; then
+            FUNCTION_ARN=$(terraform output -raw lambda_function_arn)
+            echo "function_arn=$FUNCTION_ARN" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Application:** ${{ inputs.app_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.terraform_outputs.outputs.function_arn }}" ]; then
+            echo "- **Function ARN:** ${{ steps.terraform_outputs.outputs.function_arn }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "- Run integration tests: \`./nx test ${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- View Lambda logs: \`aws logs tail /aws/lambda/rtr-${{ inputs.environment }}-${{ inputs.app_name }} --follow\`" >> $GITHUB_STEP_SUMMARY

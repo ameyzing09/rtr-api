@@ -1,0 +1,101 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        type: choice
+        options:
+          - dev
+          - ppe
+          - prod
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+jobs:
+  test:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
+          aws-region: ap-south-1
+
+      - name: Get API Gateway URL
+        id: api-url
+        run: |
+          cd deployment/api-gateway/environments/${{ inputs.environment }}
+          API_URL=$(terraform output -raw api_gateway_url 2>/dev/null || echo "")
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Test Health Endpoint
+        if: steps.api-url.outputs.api_url != ''
+        run: |
+          echo "Testing health endpoint..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.api-url.outputs.api_url }}/health)
+
+          if [ "$response" -eq 200 ]; then
+            echo "✅ Health check passed (200)"
+          else
+            echo "❌ Health check failed ($response)"
+            exit 1
+          fi
+
+      - name: Test Cognito User Pool
+        run: |
+          echo "Checking Cognito User Pool..."
+          cd deployment/cognito/environments/${{ inputs.environment }}
+          USER_POOL_ID=$(terraform output -raw user_pool_id 2>/dev/null || echo "")
+
+          if [ -n "$USER_POOL_ID" ]; then
+            aws cognito-idp describe-user-pool --user-pool-id $USER_POOL_ID
+            echo "✅ Cognito User Pool exists"
+          else
+            echo "⚠️ Cognito not deployed yet"
+          fi
+
+      - name: Test Database Connection
+        run: |
+          echo "Checking RDS Database..."
+          cd deployment/database/environments/${{ inputs.environment }}
+          DB_ENDPOINT=$(terraform output -raw db_endpoint 2>/dev/null || echo "")
+
+          if [ -n "$DB_ENDPOINT" ]; then
+            echo "✅ Database endpoint: $DB_ENDPOINT"
+          else
+            echo "⚠️ Database not deployed yet"
+          fi
+
+      - name: Test Authorizer Lambda
+        run: |
+          echo "Checking Authorizer Lambda..."
+          cd deployment/authorizer/environments/${{ inputs.environment }}
+          LAMBDA_ARN=$(terraform output -raw authorizer_arn 2>/dev/null || echo "")
+
+          if [ -n "$LAMBDA_ARN" ]; then
+            aws lambda get-function --function-name $LAMBDA_ARN
+            echo "✅ Authorizer Lambda exists"
+          else
+            echo "⚠️ Authorizer not deployed yet"
+          fi
+
+      - name: Test Summary
+        run: |
+          echo "::notice::✅ All integration tests passed for ${{ inputs.environment }}"

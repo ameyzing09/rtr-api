@@ -1,0 +1,299 @@
+#!/bin/bash
+
+# NX-style CLI for RTR API
+# Usage: ./nx <command> <target> [options]
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_info() {
+  echo -e "${BLUE}ℹ${NC} $1"
+}
+
+print_success() {
+  echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+  echo -e "${RED}✗${NC} $1"
+}
+
+print_warning() {
+  echo -e "${YELLOW}⚠${NC} $1"
+}
+
+# Function to check if gh CLI is installed
+check_gh_cli() {
+  if ! command -v gh &> /dev/null; then
+    print_error "GitHub CLI (gh) is not installed"
+    echo ""
+    echo "Install it from: https://cli.github.com/"
+    echo ""
+    echo "Or use one of these methods:"
+    echo "  - macOS:   brew install gh"
+    echo "  - Windows: winget install --id GitHub.cli"
+    echo "  - Linux:   See https://github.com/cli/cli/blob/trunk/docs/install_linux.md"
+    exit 1
+  fi
+}
+
+# Function to check if authenticated with gh
+check_gh_auth() {
+  if ! gh auth status &> /dev/null; then
+    print_error "Not authenticated with GitHub CLI"
+    echo ""
+    echo "Run: gh auth login"
+    exit 1
+  fi
+}
+
+# Function to deploy Lambda app
+deploy_lambda() {
+  local app_name=$1
+  local env=${2:-dev}
+
+  print_info "Deploying Lambda app: ${app_name} to ${env}"
+
+  # Validate app name
+  if [[ ! "$app_name" =~ ^(auth|authorizer|job)$ ]]; then
+    print_error "Invalid app name: ${app_name}"
+    echo ""
+    echo "Valid Lambda apps: auth, authorizer, job"
+    exit 1
+  fi
+
+  # Validate environment
+  if [[ ! "$env" =~ ^(dev|ppe|prod)$ ]]; then
+    print_error "Invalid environment: ${env}"
+    echo ""
+    echo "Valid environments: dev, ppe, prod"
+    exit 1
+  fi
+
+  # Trigger workflow
+  print_info "Running GitHub Actions workflow: deploy-lambda.yml"
+
+  if gh workflow run "deploy-lambda.yml" \
+      --field app_name="${app_name}" \
+      --field environment="${env}" \
+      --ref main; then
+    print_success "Deployment workflow triggered successfully!"
+    echo ""
+    print_info "Monitor workflow at:"
+    gh run list --workflow="deploy-lambda.yml" --limit 1
+    echo ""
+    print_info "To view logs:"
+    echo "  gh run view --log"
+  else
+    print_error "Failed to trigger workflow"
+    exit 1
+  fi
+}
+
+# Function to deploy infrastructure module
+deploy_infrastructure() {
+  local module=$1
+  local env=${2:-dev}
+
+  print_info "Deploying infrastructure: ${module} to ${env}"
+
+  # Validate module name
+  if [[ ! "$module" =~ ^(general|database|cognito|authorizer|api-gateway)$ ]]; then
+    print_error "Invalid module name: ${module}"
+    echo ""
+    echo "Valid infrastructure modules: general, database, cognito, authorizer, api-gateway"
+    exit 1
+  fi
+
+  # Validate environment
+  if [[ ! "$env" =~ ^(dev|ppe|prod)$ ]]; then
+    print_error "Invalid environment: ${env}"
+    echo ""
+    echo "Valid environments: dev, ppe, prod"
+    exit 1
+  fi
+
+  # Trigger workflow
+  print_info "Running GitHub Actions workflow: deploy-infrastructure.yml"
+
+  if gh workflow run "deploy-infrastructure.yml" \
+      --field module="${module}" \
+      --field environment="${env}" \
+      --ref main; then
+    print_success "Deployment workflow triggered successfully!"
+    echo ""
+    print_info "Monitor workflow at:"
+    gh run list --workflow="deploy-infrastructure.yml" --limit 1
+    echo ""
+    print_info "To view logs:"
+    echo "  gh run view --log"
+  else
+    print_error "Failed to trigger workflow"
+    exit 1
+  fi
+}
+
+# Function to run integration tests
+run_tests() {
+  local env=${1:-dev}
+
+  print_info "Running integration tests on ${env} environment"
+
+  # Validate environment
+  if [[ ! "$env" =~ ^(dev|ppe|prod)$ ]]; then
+    print_error "Invalid environment: ${env}"
+    echo ""
+    echo "Valid environments: dev, ppe, prod"
+    exit 1
+  fi
+
+  # Trigger workflow
+  print_info "Running GitHub Actions workflow: test-integration.yml"
+
+  if gh workflow run "test-integration.yml" \
+      --field environment="${env}" \
+      --ref main; then
+    print_success "Test workflow triggered successfully!"
+    echo ""
+    print_info "Monitor workflow at:"
+    gh run list --workflow="test-integration.yml" --limit 1
+    echo ""
+    print_info "To view logs:"
+    echo "  gh run view --log"
+  else
+    print_error "Failed to trigger workflow"
+    exit 1
+  fi
+}
+
+# Function to show usage
+show_usage() {
+  cat << EOF
+${BLUE}RTR API - Deployment CLI${NC}
+
+Usage:
+  ./nx deploy <target> [env]       Deploy Lambda app or infrastructure
+  ./nx test [env]                  Run integration tests
+  ./nx help                        Show this help message
+
+${BLUE}Deploy Targets:${NC}
+
+  ${GREEN}Lambda Applications:${NC}
+    auth                Authentication Lambda
+    authorizer          Lambda Authorizer
+    job                 Job Management Lambda
+
+  ${GREEN}Infrastructure Modules:${NC}
+    general             VPC, IAM, S3, Secrets
+    database            RDS PostgreSQL
+    cognito             User Pool
+    api-gateway         REST API Gateway
+
+${BLUE}Environments:${NC}
+  dev                   Development (default)
+  ppe                   Pre-production
+  prod                  Production
+
+${BLUE}Examples:${NC}
+
+  ${GREEN}# Deploy Lambda applications${NC}
+  ./nx deploy auth              Deploy auth Lambda to dev
+  ./nx deploy auth ppe          Deploy auth Lambda to ppe
+  ./nx deploy authorizer prod   Deploy authorizer to prod
+  ./nx deploy job               Deploy job Lambda to dev
+
+  ${GREEN}# Deploy infrastructure${NC}
+  ./nx deploy general dev       Deploy general infrastructure to dev
+  ./nx deploy database dev      Deploy RDS database to dev
+  ./nx deploy cognito dev       Deploy Cognito to dev
+  ./nx deploy api-gateway dev   Deploy API Gateway to dev
+
+  ${GREEN}# Run tests${NC}
+  ./nx test                     Run integration tests on dev
+  ./nx test ppe                 Run integration tests on ppe
+
+${BLUE}Prerequisites:${NC}
+  - GitHub CLI (gh) must be installed
+  - Must be authenticated: gh auth login
+  - Must have repository access with workflow permissions
+
+${BLUE}Deployment Sequence (First Time):${NC}
+  1. ./nx deploy general dev
+  2. ./nx deploy database dev
+  3. ./nx deploy cognito dev
+  4. ./nx deploy api-gateway dev
+  5. ./nx deploy auth dev
+  6. ./nx deploy job dev
+  7. ./nx test dev
+
+EOF
+}
+
+# Main script logic
+main() {
+  local command=$1
+  local target=$2
+  local env=${3:-dev}
+
+  # Show usage if no arguments
+  if [ $# -eq 0 ]; then
+    show_usage
+    exit 0
+  fi
+
+  case "$command" in
+    deploy)
+      if [ -z "$target" ]; then
+        print_error "Deploy target is required"
+        echo ""
+        show_usage
+        exit 1
+      fi
+
+      check_gh_cli
+      check_gh_auth
+
+      # Determine if target is Lambda app or infrastructure module
+      if [[ "$target" =~ ^(auth|authorizer|job)$ ]]; then
+        deploy_lambda "$target" "$env"
+      elif [[ "$target" =~ ^(general|database|cognito|api-gateway)$ ]]; then
+        deploy_infrastructure "$target" "$env"
+      else
+        print_error "Unknown deploy target: ${target}"
+        echo ""
+        show_usage
+        exit 1
+      fi
+      ;;
+
+    test)
+      # target becomes env if specified
+      local test_env=${target:-dev}
+
+      check_gh_cli
+      check_gh_auth
+      run_tests "$test_env"
+      ;;
+
+    help|--help|-h)
+      show_usage
+      ;;
+
+    *)
+      print_error "Unknown command: ${command}"
+      echo ""
+      show_usage
+      exit 1
+      ;;
+  esac
+}
+
+# Run main function
+main "$@"

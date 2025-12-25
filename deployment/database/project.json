@@ -1,0 +1,44 @@
+{
+  "name": "database",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "infrastructure",
+  "sourceRoot": "deployment/database",
+  "targets": {
+    "deploy:dev": {
+      "executor": "@nx/run-commands",
+      "options": {
+        "command": "terraform apply -auto-approve",
+        "cwd": "deployment/database/environments/dev"
+      }
+    },
+    "deploy:ppe": {
+      "executor": "@nx/run-commands",
+      "options": {
+        "command": "terraform apply -auto-approve",
+        "cwd": "deployment/database/environments/ppe"
+      }
+    },
+    "deploy:prod": {
+      "executor": "@nx/run-commands",
+      "options": {
+        "command": "terraform apply -auto-approve",
+        "cwd": "deployment/database/environments/prod"
+      }
+    },
+    "plan:dev": {
+      "executor": "@nx/run-commands",
+      "options": {
+        "command": "terraform plan",
+        "cwd": "deployment/database/environments/dev"
+      }
+    },
+    "destroy:dev": {
+      "executor": "@nx/run-commands",
+      "options": {
+        "command": "terraform destroy -auto-approve",
+        "cwd": "deployment/database/environments/dev"
+      }
+    }
+  },
+  "tags": ["infrastructure", "aws", "database", "rds", "postgresql"]
+}
