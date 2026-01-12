@@ -50,3 +50,7 @@ logs/
 # Secrets
 **/secrets.json
 **/credentials.json
+
+#collection
+bruno/
+.mcp.json
