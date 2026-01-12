@@ -1,0 +1,8 @@
+# Supabase CLI Configuration
+# Minimal config for remote deployment
+
+[api]
+port = 54321
+
+[db]
+port = 54322
