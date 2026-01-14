@@ -27,6 +27,19 @@ export async function login(ctx: HandlerContext, req: Request): Promise<Response
     throw new Error('User does not belong to this tenant');
   }
 
+  // Update last_login_at (fire-and-forget, doesn't block response)
+  const userId = data.user.id;
+  (async () => {
+    try {
+      await ctx.supabaseAdmin
+        .from('user_profiles')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', userId);
+    } catch {
+      // Silently ignore errors - login should succeed even if this fails
+    }
+  })();
+
   // Get tenant branding
   const { data: settings } = await ctx.supabaseAdmin
     .from('tenant_settings')
@@ -62,6 +75,19 @@ export async function adminLogin(ctx: HandlerContext, req: Request): Promise<Res
   if (profile.role !== 'SUPERADMIN') {
     throw new Error('Not a superadmin user');
   }
+
+  // Update last_login_at (fire-and-forget, doesn't block response)
+  const usrId = data.user.id;
+  (async () => {
+    try {
+      await ctx.supabaseAdmin
+        .from('user_profiles')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', usrId);
+    } catch {
+      // Silently ignore errors - login should succeed even if this fails
+    }
+  })();
 
   // Convert expires_at from Unix timestamp to ISO string
   const expiresAt = data.session?.expires_at

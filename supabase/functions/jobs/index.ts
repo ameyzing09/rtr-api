@@ -1,5 +1,27 @@
-import { getSupabaseClient } from '../_shared/supabase.ts';
-import { corsResponse, jsonResponse } from '../_shared/cors.ts';
+import { corsResponse, jsonResponse, corsHeaders } from '../_shared/cors.ts';
+import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
+import { handleError } from './utils.ts';
+import {
+  getTenantIdFromAuth,
+  resolveTenantFromHost,
+  getUserFromToken,
+} from './middleware.ts';
+import type { HandlerContext } from './types.ts';
+
+// Import handlers
+import * as jobHandlers from './handlers/jobs.ts';
+import * as appHandlers from './handlers/applications.ts';
+import * as publicHandlers from './handlers/public.ts';
+
+// Parse path, removing function name prefix
+function parsePath(url: string): string[] {
+  return new URL(url).pathname
+    .replace(/^\/jobs?\/?/, '')
+    .replace(/^\/functions\/v1\/jobs?\/?/, '')
+    .replace(/\/$/, '')
+    .split('/')
+    .filter(Boolean);
+}
 
 Deno.serve(async (req: Request) => {
   // CORS preflight
@@ -8,72 +30,177 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = new URL(req.url);
-  const pathParts = url.pathname.split('/').filter(Boolean);
-  // pathParts: ['jobs'] or ['jobs', ':id']
-  const id = pathParts.length > 1 ? pathParts[1] : null;
+  const pathParts = parsePath(req.url);
+  const fullPath = pathParts.join('/');
   const method = req.method;
-  const supabase = getSupabaseClient(req);
+
+  const supabaseAdmin = getSupabaseAdmin();
+  const supabaseUser = getSupabaseClient(req);
 
   try {
-    // GET /jobs - List all jobs (RLS filters by tenant automatically!)
-    if (!id && method === 'GET') {
-      const { data, error } = await supabase
-        .from('jobs')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return jsonResponse({ success: true, data, count: data.length });
+    // ==================== PUBLIC ROUTES ====================
+    // Routes starting with /public/ don't require authentication
+    if (pathParts[0] === 'public') {
+      // Resolve tenant from subdomain or X-Tenant-ID header
+      const tenantId = await resolveTenantFromHost(req, supabaseAdmin);
+      const ctx: HandlerContext = {
+        supabaseAdmin,
+        supabaseUser,
+        tenantId,
+        pathParts,
+        method,
+        url,
+      };
+
+      // GET /public/jobs - List public jobs
+      if (method === 'GET' && fullPath === 'public/jobs') {
+        return await publicHandlers.listPublicJobs(ctx, req);
+      }
+
+      // GET /public/jobs/:id - Get public job by ID
+      if (method === 'GET' && pathParts[1] === 'jobs' && pathParts[2]) {
+        return await publicHandlers.getPublicJobById(ctx);
+      }
+
+      // POST /public/applications - Submit application
+      if (method === 'POST' && fullPath === 'public/applications') {
+        return await publicHandlers.createPublicApplication(ctx, req);
+      }
+
+      return jsonResponse({ code: 'not_found', message: 'Endpoint not found' }, 404);
     }
 
-    // POST /jobs - Create job
-    if (!id && method === 'POST') {
-      const body = await req.json();
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from('jobs')
-        .insert({ ...body, created_by: user?.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return jsonResponse({ success: true, data }, 201);
+    // ==================== PRIVATE ROUTES (Require Auth) ====================
+    // Get user from JWT token
+    const user = await getUserFromToken(supabaseUser);
+    if (!user) {
+      throw new Error('Unauthorized: Invalid or missing token');
     }
 
-    // Routes with ID: /jobs/:id
-    if (id) {
-      // GET /jobs/:id
+    // Get tenant ID: Only SUPERADMIN can override via X-Tenant-ID header
+    // Regular users MUST use their profile's tenant_id (security: prevent cross-tenant access)
+    let tenantId: string;
+    const headerTenantId = req.headers.get('X-Tenant-ID');
+
+    if (user.role === 'SUPERADMIN' && headerTenantId) {
+      // SUPERADMIN can switch tenant context for administration
+      tenantId = headerTenantId;
+    } else {
+      // Regular users: enforce their profile's tenant_id
+      tenantId = user.tenantId || await getTenantIdFromAuth(req, supabaseUser);
+    }
+
+    const ctx: HandlerContext = {
+      supabaseAdmin,
+      supabaseUser,
+      tenantId,
+      userId: user.id,
+      userRole: user.role,
+      pathParts,
+      method,
+      url,
+    };
+
+    // ==================== JOB ROUTES ====================
+    // GET /job - List jobs
+    if (method === 'GET' && (fullPath === '' || fullPath === 'job')) {
+      return await jobHandlers.listJobs(ctx, req);
+    }
+
+    // POST /job - Create job
+    if (method === 'POST' && (fullPath === '' || fullPath === 'job')) {
+      return await jobHandlers.createJob(ctx, req);
+    }
+
+    // Routes with job ID: /job/:id
+    if (pathParts[0] === 'job' || (pathParts.length >= 1 && pathParts[0] !== 'applications')) {
+      const jobIdPath = pathParts[0] === 'job' ? pathParts[1] : pathParts[0];
+      const action = pathParts[0] === 'job' ? pathParts[2] : pathParts[1];
+
+      // Skip if it's the applications route
+      if (jobIdPath === 'applications' || pathParts[0] === 'applications') {
+        // Fall through to applications routes
+      } else if (jobIdPath) {
+        // Normalize pathParts for handlers (ensure jobId is at index 1)
+        const normalizedParts = pathParts[0] === 'job'
+          ? pathParts
+          : ['job', ...pathParts];
+        ctx.pathParts = normalizedParts;
+
+        // PUT /job/:id/publish - Publish job
+        if (method === 'PUT' && action === 'publish') {
+          return await jobHandlers.publishJob(ctx);
+        }
+
+        // PUT /job/:id/unpublish - Unpublish job
+        if (method === 'PUT' && action === 'unpublish') {
+          return await jobHandlers.unpublishJob(ctx);
+        }
+
+        // GET /job/:id - Get job by ID
+        if (method === 'GET' && !action) {
+          return await jobHandlers.getJob(ctx);
+        }
+
+        // PUT /job/:id - Update job
+        if (method === 'PUT' && !action) {
+          return await jobHandlers.updateJob(ctx, req);
+        }
+
+        // DELETE /job/:id - Delete job
+        if (method === 'DELETE' && !action) {
+          const response = await jobHandlers.deleteJob(ctx);
+          // Add CORS headers to 204 response
+          if (response.status === 204) {
+            return new Response(null, {
+              status: 204,
+              headers: corsHeaders,
+            });
+          }
+          return response;
+        }
+      }
+    }
+
+    // ==================== APPLICATION ROUTES ====================
+    // GET /applications - List applications
+    if (method === 'GET' && fullPath === 'applications') {
+      return await appHandlers.listApplications(ctx, req);
+    }
+
+    // POST /applications - Create application
+    if (method === 'POST' && fullPath === 'applications') {
+      return await appHandlers.createApplication(ctx, req);
+    }
+
+    // Routes with application ID: /applications/:id
+    if (pathParts[0] === 'applications' && pathParts[1]) {
+      // GET /applications/:id
       if (method === 'GET') {
-        const { data, error } = await supabase
-          .from('jobs')
-          .select('*')
-          .eq('id', id)
-          .single();
-        if (error) throw error;
-        return jsonResponse({ success: true, data });
+        return await appHandlers.getApplication(ctx);
       }
 
-      // PUT /jobs/:id
+      // PUT /applications/:id
       if (method === 'PUT') {
-        const body = await req.json();
-        const { data, error } = await supabase
-          .from('jobs')
-          .update({ ...body, updated_at: new Date().toISOString() })
-          .eq('id', id)
-          .select()
-          .single();
-        if (error) throw error;
-        return jsonResponse({ success: true, data });
+        return await appHandlers.updateApplication(ctx, req);
       }
 
-      // DELETE /jobs/:id
+      // DELETE /applications/:id
       if (method === 'DELETE') {
-        const { error } = await supabase.from('jobs').delete().eq('id', id);
-        if (error) throw error;
-        return jsonResponse({ success: true, message: 'Job deleted' });
+        const response = await appHandlers.deleteApplication(ctx);
+        // Add CORS headers to 204 response
+        if (response.status === 204) {
+          return new Response(null, {
+            status: 204,
+            headers: corsHeaders,
+          });
+        }
+        return response;
       }
     }
 
-    return jsonResponse({ success: false, error: 'Not found' }, 404);
+    return jsonResponse({ code: 'not_found', message: 'Endpoint not found' }, 404);
   } catch (error) {
-    return jsonResponse({ success: false, error: (error as Error).message }, 400);
+    return handleError(error);
   }
 });

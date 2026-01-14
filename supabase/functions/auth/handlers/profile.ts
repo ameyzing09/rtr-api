@@ -1,11 +1,11 @@
 import type { HandlerContext } from '../types.ts';
-import { jsonResponse } from '../../_shared/cors.ts';
+import { jsonResponse, noContentResponse } from '../../_shared/cors.ts';
 import { requireAuth } from '../middleware.ts';
 import { formatUserResponse } from '../utils.ts';
 
-// POST /logout or /admin/logout
+// POST /logout or /admin/logout - Returns 204 No Content (matches original Go service)
 export function logout(): Response {
-  return jsonResponse({ success: true }, 204);
+  return noContentResponse();
 }
 
 // GET /me - Get current user profile
@@ -39,5 +39,5 @@ export async function changePassword(ctx: HandlerContext, req: Request): Promise
   });
   if (error) throw error;
 
-  return jsonResponse({ success: true }, 204);
+  return noContentResponse();
 }
