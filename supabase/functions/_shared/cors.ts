@@ -14,3 +14,11 @@ export function jsonResponse(data: unknown, status = 200) {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
+
+// 204 No Content response (must have null body)
+export function noContentResponse() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}

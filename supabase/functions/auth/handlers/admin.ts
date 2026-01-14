@@ -28,8 +28,22 @@ export async function listAllUsers(ctx: HandlerContext): Promise<Response> {
     .range(offset, offset + limit - 1);
   if (error) throw error;
 
+  // Fetch emails from auth.users
+  const { data: authUsers } = await ctx.supabaseAdmin.auth.admin.listUsers();
+
+  // Create email lookup map
+  const emailMap = new Map<string, string>(
+    authUsers?.users?.map(u => [u.id, u.email || '']) || []
+  );
+
+  // Merge email into profiles
+  const usersWithEmail = (data || []).map(profile => ({
+    ...profile,
+    email: emailMap.get(profile.id) || null,
+  }));
+
   return jsonResponse({
-    users: data,
+    users: usersWithEmail,
     total: count,
     page,
     limit,
@@ -48,7 +62,13 @@ export async function getUserById(ctx: HandlerContext): Promise<Response> {
     .single();
   if (error) throw new Error('User not found');
 
-  return jsonResponse(data);
+  // Fetch email from auth.users
+  const { data: authUser } = await ctx.supabaseAdmin.auth.admin.getUserById(userId);
+
+  return jsonResponse({
+    ...data,
+    email: authUser?.user?.email || null,
+  });
 }
 
 // POST /admin/users/:id/reset-password
