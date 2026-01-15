@@ -44,27 +44,105 @@ export async function listJobs(ctx: HandlerContext, req: Request): Promise<Respo
 }
 
 // POST /job - Create new job
+// Flow: Create as DRAFT → Assign pipeline → Update to ACTIVE
+// If pipeline assignment fails, rollback (delete job)
 export async function createJob(ctx: HandlerContext, req: Request): Promise<Response> {
   const body = await req.json();
   const dbData = toSnakeCase(body);
+
+  // Extract pipeline_id if provided (optional)
+  const pipelineId = body.pipelineId || body.pipeline_id;
+  delete dbData.pipeline_id;
 
   // Remove fields that shouldn't be set on create
   delete dbData.id;
   delete dbData.created_at;
   delete dbData.updated_at;
 
-  const { data, error } = await ctx.supabaseUser
+  // 1. Create job as DRAFT
+  const { data: job, error: createError } = await ctx.supabaseUser
     .from('jobs')
     .insert({
       ...dbData,
       tenant_id: ctx.tenantId,
       created_by: ctx.userId,
+      status: 'DRAFT',
     })
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
-  return jsonResponse(formatJobResponse(data as JobRecord), 201);
+  if (createError) throw new Error(createError.message);
+
+  const jobId = (job as JobRecord).id;
+
+  try {
+    // 2. Call pipeline service to assign pipeline
+    const pipelineResponse = await assignPipelineToJob(
+      jobId,
+      ctx.tenantId,
+      pipelineId
+    );
+
+    if (!pipelineResponse.ok) {
+      const errorBody = await pipelineResponse.json().catch(() => ({}));
+      const errorMsg = errorBody.message || `Pipeline assignment failed with status ${pipelineResponse.status}`;
+      throw new Error(errorMsg);
+    }
+
+    // 3. Update job status to ACTIVE
+    const { data: updatedJob, error: updateError } = await ctx.supabaseUser
+      .from('jobs')
+      .update({ status: 'ACTIVE' })
+      .eq('id', jobId)
+      .eq('tenant_id', ctx.tenantId)
+      .select()
+      .single();
+
+    if (updateError) throw new Error(updateError.message);
+
+    return jsonResponse(formatJobResponse(updatedJob as JobRecord), 201);
+
+  } catch (error) {
+    // 4. Rollback: Delete the DRAFT job on any failure
+    await ctx.supabaseAdmin
+      .from('jobs')
+      .delete()
+      .eq('id', jobId);
+
+    throw error;
+  }
+}
+
+// Internal: Call pipeline service to assign pipeline to job
+async function assignPipelineToJob(
+  jobId: string,
+  tenantId: string,
+  pipelineId?: string
+): Promise<Response> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+
+  const pipelineUrl = `${supabaseUrl}/functions/v1/pipeline/pipeline/assign`;
+
+  const requestBody: Record<string, string> = {
+    job_id: jobId,
+    tenant_id: tenantId,
+  };
+
+  if (pipelineId) {
+    requestBody.pipeline_id = pipelineId;
+  }
+
+  return await fetch(pipelineUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'apikey': serviceRoleKey,
+    },
+    body: JSON.stringify(requestBody),
+  });
 }
 
 // GET /job/:id - Get job by ID

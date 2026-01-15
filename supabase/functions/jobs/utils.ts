@@ -22,6 +22,7 @@ export function formatJobResponse(job: JobRecord): JobResponse {
     expireAt: job.expire_at,
     externalApplyUrl: job.external_apply_url,
     extra: job.extra,
+    status: job.status,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
   };
