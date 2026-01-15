@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// Job status type
+export type JobStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
 // Database record types (snake_case - matches PostgreSQL columns)
 export interface JobRecord {
   id: string;
@@ -13,6 +16,7 @@ export interface JobRecord {
   expire_at: string | null;
   external_apply_url: string | null;
   extra: Record<string, unknown> | null;
+  status: JobStatus;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -45,6 +49,7 @@ export interface JobResponse {
   expireAt: string | null;
   externalApplyUrl: string | null;
   extra: Record<string, unknown> | null;
+  status: JobStatus;
   createdAt: string;
   updatedAt: string;
 }
