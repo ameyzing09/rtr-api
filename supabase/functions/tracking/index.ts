@@ -7,6 +7,7 @@ import type { HandlerContext } from './types.ts';
 import * as stateHandlers from './handlers/state.ts';
 import * as historyHandlers from './handlers/history.ts';
 import * as boardHandlers from './handlers/board.ts';
+import * as settingsHandlers from './handlers/settings.ts';
 
 // Parse path, removing function name prefix
 function parsePath(url: string): string[] {
@@ -147,6 +148,42 @@ Deno.serve(async (req: Request) => {
     // GET /pipelines/:id/board - Kanban board view
     if (method === 'GET' && pathParts[0] === 'pipelines' && pathParts[1] && pathParts[2] === 'board') {
       return await boardHandlers.getPipelineBoard(ctx);
+    }
+
+    // ==================== SETTINGS ROUTES ====================
+    // Routes: /settings/statuses[/:id]
+
+    if (pathParts[0] === 'settings' && pathParts[1] === 'statuses') {
+      const statusId = pathParts[2];
+
+      // GET /settings/statuses - List all statuses
+      if (method === 'GET' && !statusId) {
+        return await settingsHandlers.listStatuses(ctx);
+      }
+
+      // POST /settings/statuses - Create new status (ADMIN only)
+      if (method === 'POST' && !statusId) {
+        if (!canManageTracking(user.role)) {
+          throw new Error('Forbidden: ADMIN role required to manage statuses');
+        }
+        return await settingsHandlers.createStatus(ctx, req);
+      }
+
+      // PATCH /settings/statuses/:id - Update status (ADMIN only)
+      if (method === 'PATCH' && statusId) {
+        if (!canManageTracking(user.role)) {
+          throw new Error('Forbidden: ADMIN role required to manage statuses');
+        }
+        return await settingsHandlers.updateStatus(ctx, req);
+      }
+
+      // DELETE /settings/statuses/:id - Delete status (ADMIN only)
+      if (method === 'DELETE' && statusId) {
+        if (!canManageTracking(user.role)) {
+          throw new Error('Forbidden: ADMIN role required to manage statuses');
+        }
+        return await settingsHandlers.deleteStatus(ctx);
+      }
     }
 
     // ==================== 404 ====================

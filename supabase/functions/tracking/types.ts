@@ -23,7 +23,7 @@ export interface ApplicationPipelineStateRecord {
   job_id: string;
   pipeline_id: string;
   current_stage_id: string;
-  status: 'ACTIVE' | 'HIRED' | 'REJECTED' | 'WITHDRAWN' | 'ON_HOLD';
+  status: string;  // Now tenant-configurable, validated by DB
   entered_stage_at: string;
   created_at: string;
   updated_at: string;
@@ -36,7 +36,7 @@ export interface ApplicationStageHistoryRecord {
   pipeline_id: string;
   from_stage_id: string | null;
   to_stage_id: string | null;
-  action: 'MOVE' | 'REJECT' | 'HIRE' | 'WITHDRAW' | 'HOLD' | 'ACTIVATE';
+  action: string;  // Now tenant-configurable via action_code
   changed_by: string | null;
   changed_at: string;
   reason: string | null;
@@ -130,7 +130,7 @@ export interface MoveStageDTO {
 }
 
 export interface UpdateStatusDTO {
-  status: 'HIRED' | 'REJECTED' | 'WITHDRAWN' | 'ON_HOLD' | 'ACTIVE';
+  status: string;  // Now tenant-configurable, validated by RPC
   reason?: string;
 }
 
@@ -161,6 +161,49 @@ export interface HandlerContext {
   isServiceRole?: boolean;
 }
 
-// Terminal statuses that block further stage moves
-export const TERMINAL_STATUSES = ['HIRED', 'REJECTED', 'WITHDRAWN'] as const;
-export type TerminalStatus = typeof TERMINAL_STATUSES[number];
+// ============================================
+// Tenant-Configurable Status Record
+// ============================================
+
+export interface TenantStatusRecord {
+  id: string;
+  tenant_id: string;
+  status_code: string;
+  display_name: string;
+  action_code: string;
+  is_terminal: boolean;
+  is_active: boolean;
+  sort_order: number;
+  color_hex: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// For API responses (camelCase)
+export interface TenantStatusResponse {
+  id: string;
+  statusCode: string;
+  displayName: string;
+  actionCode: string;
+  isTerminal: boolean;
+  sortOrder: number;
+  colorHex: string | null;
+}
+
+// Request DTOs for status management
+export interface CreateStatusDTO {
+  status_code: string;
+  display_name: string;
+  action_code?: string;
+  is_terminal?: boolean;
+  sort_order?: number;
+  color_hex?: string;
+}
+
+export interface UpdateTenantStatusDTO {
+  display_name?: string;
+  action_code?: string;
+  is_terminal?: boolean;
+  sort_order?: number;
+  color_hex?: string;
+}

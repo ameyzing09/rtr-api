@@ -3,18 +3,88 @@ import type {
   AttachToPipelineDTO,
   MoveStageDTO,
   UpdateStatusDTO,
-  ApplicationPipelineStateRecord,
   PipelineStageRecord,
+  TrackingStateResponse,
 } from '../types.ts';
 import {
   jsonResponse,
-  formatTrackingStateResponse,
-  isTerminalStatus,
-  getActionFromStatus,
   isValidUUID,
 } from '../utils.ts';
 
+// ============================================================================
+// Type for RPC return (matches tracking_state_result composite type)
+// ============================================================================
+interface TrackingRpcResult {
+  id: string;
+  application_id: string;
+  job_id: string;
+  pipeline_id: string;
+  current_stage_id: string;
+  status: string;
+  entered_stage_at: string;
+  updated_at: string;
+}
+
+// Format RPC result to API response
+function formatRpcResult(
+  result: TrackingRpcResult,
+  stage: PipelineStageRecord
+): TrackingStateResponse {
+  return {
+    id: result.id,
+    applicationId: result.application_id,
+    jobId: result.job_id,
+    pipelineId: result.pipeline_id,
+    currentStageId: result.current_stage_id,
+    currentStageName: stage.stage_name,
+    currentStageIndex: stage.order_index,
+    status: result.status,
+    enteredStageAt: result.entered_stage_at,
+    createdAt: result.entered_stage_at, // RPC doesn't return created_at, use entered_stage_at
+    updatedAt: result.updated_at,
+  };
+}
+
+// Handle structured error codes from RPC
+function handleRpcError(error: { code?: string; message?: string }): never {
+  const msg = error.message || 'Unknown error';
+
+  // Unique constraint violation (duplicate attach)
+  if (error.code === '23505') {
+    throw new Error('Application already attached to a pipeline (conflict)');
+  }
+
+  // Custom error codes from our functions
+  if (msg.includes('TENANT_MISMATCH')) {
+    throw new Error('Forbidden: Tenant access violation');
+  }
+  if (msg.includes('INVALID_STAGE')) {
+    throw new Error('Bad request: Stage does not belong to pipeline');
+  }
+  if (msg.includes('INVALID_STATUS')) {
+    // Extract status name from error message if possible
+    const match = msg.match(/Status "([^"]+)" not configured/);
+    const statusName = match ? match[1] : 'unknown';
+    throw new Error(`Bad request: Status "${statusName}" is not configured for this tenant`);
+  }
+  if (msg.includes('NOT_FOUND')) {
+    throw new Error('Not found: Application state not found');
+  }
+  if (msg.includes('TERMINAL_STATUS')) {
+    throw new Error('Forbidden: Cannot modify application in terminal status');
+  }
+
+  throw new Error(msg);
+}
+
+// ============================================================================
 // POST /applications/:id/attach - Attach application to pipeline
+// ============================================================================
+// Uses atomic RPC: attach_application_to_pipeline_v1
+// - Validates tenant ownership from DB (not trusted params)
+// - Atomic state + history insert
+// - Idempotency via event_hash + ON CONFLICT
+// ============================================================================
 export async function attachToPipeline(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -27,21 +97,10 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
   // For service role calls, tenant_id comes from body
   const tenantId = ctx.isServiceRole && body.tenant_id ? body.tenant_id : ctx.tenantId;
 
-  // 1. Check if already attached (idempotency - return 409)
-  const { data: existingState } = await ctx.supabaseAdmin
-    .from('application_pipeline_state')
-    .select('id')
-    .eq('application_id', applicationId)
-    .single();
-
-  if (existingState) {
-    throw new Error('Application already attached to a pipeline (conflict)');
-  }
-
-  // 2. Get application to verify it exists and get job_id
+  // Get application to get job_id (RPC validates tenant ownership)
   const { data: application, error: appError } = await ctx.supabaseAdmin
     .from('applications')
-    .select('id, job_id, tenant_id')
+    .select('id, job_id')
     .eq('id', applicationId)
     .single();
 
@@ -49,18 +108,12 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
     throw new Error(`Application with ID ${applicationId} not found`);
   }
 
-  // Verify tenant access
-  if (application.tenant_id !== tenantId) {
-    throw new Error('Forbidden: Tenant access violation');
-  }
-
   const jobId = application.job_id;
 
-  // 3. Resolve pipeline - use provided pipeline_id or get from job assignment
+  // Resolve pipeline - use provided pipeline_id or get from job assignment
   let pipelineId = body.pipeline_id;
 
   if (!pipelineId) {
-    // Get pipeline from job assignment
     const { data: assignment, error: assignError } = await ctx.supabaseAdmin
       .from('pipeline_assignments')
       .select('pipeline_id')
@@ -72,26 +125,9 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
       throw new Error(`No pipeline assigned to job ${jobId}`);
     }
     pipelineId = assignment.pipeline_id;
-  } else {
-    // Verify provided pipeline exists
-    const { data: pipeline, error: pipelineError } = await ctx.supabaseAdmin
-      .from('pipelines')
-      .select('id, tenant_id')
-      .eq('id', pipelineId)
-      .eq('is_deleted', false)
-      .single();
-
-    if (pipelineError || !pipeline) {
-      throw new Error(`Pipeline with ID ${pipelineId} not found`);
-    }
-
-    // Verify tenant access (global pipelines allowed)
-    if (pipeline.tenant_id !== null && pipeline.tenant_id !== tenantId) {
-      throw new Error('Forbidden: Tenant access violation');
-    }
   }
 
-  // 4. Get first stage of pipeline (order_index = 0)
+  // Get first stage of pipeline (order_index = 0)
   const { data: firstStage, error: stageError } = await ctx.supabaseAdmin
     .from('pipeline_stages')
     .select('*')
@@ -103,46 +139,32 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
     throw new Error('Pipeline has no stages configured');
   }
 
-  // 5. Insert application_pipeline_state
-  const { data: state, error: insertError } = await ctx.supabaseAdmin
-    .from('application_pipeline_state')
-    .insert({
-      tenant_id: tenantId,
-      application_id: applicationId,
-      job_id: jobId,
-      pipeline_id: pipelineId,
-      current_stage_id: firstStage.id,
-      status: 'ACTIVE',
-      entered_stage_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (insertError) {
-    throw new Error(`Failed to attach application: ${insertError.message}`);
-  }
-
-  // 6. Insert initial history entry
-  await ctx.supabaseAdmin
-    .from('application_stage_history')
-    .insert({
-      tenant_id: tenantId,
-      application_id: applicationId,
-      pipeline_id: pipelineId,
-      from_stage_id: null,
-      to_stage_id: firstStage.id,
-      action: 'MOVE',
-      changed_by: ctx.userId || null,
-      reason: 'Application attached to pipeline',
+  // Call atomic RPC (validates tenant, inserts state + history atomically)
+  const { data: result, error: rpcError } = await ctx.supabaseAdmin
+    .rpc('attach_application_to_pipeline_v1', {
+      p_tenant_id: tenantId,
+      p_application_id: applicationId,
+      p_job_id: jobId,
+      p_pipeline_id: pipelineId,
+      p_first_stage_id: firstStage.id,
+      p_user_id: ctx.userId || null,
     });
 
+  if (rpcError) {
+    handleRpcError(rpcError);
+  }
+
   return jsonResponse(
-    formatTrackingStateResponse(state as ApplicationPipelineStateRecord, firstStage as PipelineStageRecord),
+    formatRpcResult(result as TrackingRpcResult, firstStage as PipelineStageRecord),
     201
   );
 }
 
+// ============================================================================
 // GET /applications/:id - Get tracking state
+// ============================================================================
+// No RPC needed - just a read operation
+// ============================================================================
 export async function getState(ctx: HandlerContext): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -150,7 +172,7 @@ export async function getState(ctx: HandlerContext): Promise<Response> {
     throw new Error('Invalid application ID format');
   }
 
-  // Get state with current stage info
+  // Get state with RLS
   const { data: state, error: stateError } = await ctx.supabaseUser
     .from('application_pipeline_state')
     .select('*')
@@ -173,12 +195,33 @@ export async function getState(ctx: HandlerContext): Promise<Response> {
     throw new Error('Current stage not found');
   }
 
-  return jsonResponse({
-    data: formatTrackingStateResponse(state as ApplicationPipelineStateRecord, stage as PipelineStageRecord),
-  });
+  // Format manually since we're not using RPC
+  const response: TrackingStateResponse = {
+    id: state.id,
+    applicationId: state.application_id,
+    jobId: state.job_id,
+    pipelineId: state.pipeline_id,
+    currentStageId: state.current_stage_id,
+    currentStageName: (stage as PipelineStageRecord).stage_name,
+    currentStageIndex: (stage as PipelineStageRecord).order_index,
+    status: state.status,
+    enteredStageAt: state.entered_stage_at,
+    createdAt: state.created_at,
+    updatedAt: state.updated_at,
+  };
+
+  return jsonResponse({ data: response });
 }
 
+// ============================================================================
 // POST /applications/:id/move - Move to different stage
+// ============================================================================
+// Uses atomic RPC: move_application_stage_v1
+// - Validates tenant ownership from actual DB row
+// - Validates target stage belongs to same pipeline
+// - Atomic state update + history insert
+// - Idempotent: returns current state if already at target stage
+// ============================================================================
 export async function moveStage(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -192,71 +235,45 @@ export async function moveStage(ctx: HandlerContext, req: Request): Promise<Resp
     throw new Error('to_stage_id is required and must be a valid UUID');
   }
 
-  // 1. Get current state
-  const { data: state, error: stateError } = await ctx.supabaseUser
-    .from('application_pipeline_state')
-    .select('*')
-    .eq('application_id', applicationId)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
+  // Call atomic RPC (validates everything, handles idempotency)
+  const { data: result, error: rpcError } = await ctx.supabaseAdmin
+    .rpc('move_application_stage_v1', {
+      p_application_id: applicationId,
+      p_tenant_id: ctx.tenantId,
+      p_to_stage_id: body.to_stage_id,
+      p_user_id: ctx.userId,
+      p_reason: body.reason || null,
+    });
 
-  if (stateError || !state) {
-    throw new Error(`Tracking state for application ${applicationId} not found`);
+  if (rpcError) {
+    handleRpcError(rpcError);
   }
 
-  // 2. Check if status is terminal
-  if (isTerminalStatus(state.status)) {
-    throw new Error(`Cannot move application: status is terminal (${state.status})`);
-  }
-
-  // 3. Validate target stage exists in same pipeline
-  const { data: targetStage, error: targetError } = await ctx.supabaseAdmin
+  // Get stage details for response
+  const { data: stage, error: stageError } = await ctx.supabaseAdmin
     .from('pipeline_stages')
     .select('*')
     .eq('id', body.to_stage_id)
-    .eq('pipeline_id', state.pipeline_id)
     .single();
 
-  if (targetError || !targetStage) {
-    throw new Error(`Stage ${body.to_stage_id} not found in pipeline ${state.pipeline_id}`);
+  if (stageError || !stage) {
+    throw new Error('Stage not found');
   }
-
-  // 4. Update state
-  const { data: updatedState, error: updateError } = await ctx.supabaseUser
-    .from('application_pipeline_state')
-    .update({
-      current_stage_id: body.to_stage_id,
-      entered_stage_at: new Date().toISOString(),
-    })
-    .eq('id', state.id)
-    .eq('tenant_id', ctx.tenantId)
-    .select()
-    .single();
-
-  if (updateError) {
-    throw new Error(`Failed to move stage: ${updateError.message}`);
-  }
-
-  // 5. Insert history entry
-  await ctx.supabaseAdmin
-    .from('application_stage_history')
-    .insert({
-      tenant_id: ctx.tenantId,
-      application_id: applicationId,
-      pipeline_id: state.pipeline_id,
-      from_stage_id: state.current_stage_id,
-      to_stage_id: body.to_stage_id,
-      action: 'MOVE',
-      changed_by: ctx.userId,
-      reason: body.reason || null,
-    });
 
   return jsonResponse({
-    data: formatTrackingStateResponse(updatedState as ApplicationPipelineStateRecord, targetStage as PipelineStageRecord),
+    data: formatRpcResult(result as TrackingRpcResult, stage as PipelineStageRecord),
   });
 }
 
+// ============================================================================
 // PATCH /applications/:id/status - Update status
+// ============================================================================
+// Uses atomic RPC: update_application_status_v1
+// - Validates tenant ownership from actual DB row
+// - Blocks status changes from terminal states
+// - Atomic status update + history insert
+// - Idempotent: returns current state if already at target status
+// ============================================================================
 export async function updateStatus(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -266,65 +283,38 @@ export async function updateStatus(ctx: HandlerContext, req: Request): Promise<R
 
   const body: UpdateStatusDTO = await req.json();
 
-  const validStatuses = ['ACTIVE', 'HIRED', 'REJECTED', 'WITHDRAWN', 'ON_HOLD'];
-  if (!body.status || !validStatuses.includes(body.status)) {
-    throw new Error(`status must be one of: ${validStatuses.join(', ')}`);
+  // Validation: status is required (RPC validates against tenant_application_statuses)
+  if (!body.status || typeof body.status !== 'string' || body.status.trim() === '') {
+    throw new Error('status is required');
   }
 
-  // 1. Get current state
-  const { data: state, error: stateError } = await ctx.supabaseUser
-    .from('application_pipeline_state')
-    .select('*')
-    .eq('application_id', applicationId)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
-
-  if (stateError || !state) {
-    throw new Error(`Tracking state for application ${applicationId} not found`);
-  }
-
-  // 2. Check if current status is terminal (can't change)
-  if (isTerminalStatus(state.status)) {
-    throw new Error(`Cannot change status: current status is terminal (${state.status})`);
-  }
-
-  // 3. Update status
-  const { data: updatedState, error: updateError } = await ctx.supabaseUser
-    .from('application_pipeline_state')
-    .update({
-      status: body.status,
-    })
-    .eq('id', state.id)
-    .eq('tenant_id', ctx.tenantId)
-    .select()
-    .single();
-
-  if (updateError) {
-    throw new Error(`Failed to update status: ${updateError.message}`);
-  }
-
-  // 4. Get current stage for response
-  const { data: stage } = await ctx.supabaseAdmin
-    .from('pipeline_stages')
-    .select('*')
-    .eq('id', state.current_stage_id)
-    .single();
-
-  // 5. Insert history entry
-  await ctx.supabaseAdmin
-    .from('application_stage_history')
-    .insert({
-      tenant_id: ctx.tenantId,
-      application_id: applicationId,
-      pipeline_id: state.pipeline_id,
-      from_stage_id: state.current_stage_id,
-      to_stage_id: state.current_stage_id,  // Same stage
-      action: getActionFromStatus(body.status),
-      changed_by: ctx.userId,
-      reason: body.reason || null,
+  // Call atomic RPC (validates everything, handles idempotency)
+  const { data: result, error: rpcError } = await ctx.supabaseAdmin
+    .rpc('update_application_status_v1', {
+      p_application_id: applicationId,
+      p_tenant_id: ctx.tenantId,
+      p_status: body.status,
+      p_user_id: ctx.userId,
+      p_reason: body.reason || null,
     });
 
+  if (rpcError) {
+    handleRpcError(rpcError);
+  }
+
+  // Get stage details for response
+  const rpcResult = result as TrackingRpcResult;
+  const { data: stage, error: stageError } = await ctx.supabaseAdmin
+    .from('pipeline_stages')
+    .select('*')
+    .eq('id', rpcResult.current_stage_id)
+    .single();
+
+  if (stageError || !stage) {
+    throw new Error('Stage not found');
+  }
+
   return jsonResponse({
-    data: formatTrackingStateResponse(updatedState as ApplicationPipelineStateRecord, stage as PipelineStageRecord),
+    data: formatRpcResult(rpcResult, stage as PipelineStageRecord),
   });
 }

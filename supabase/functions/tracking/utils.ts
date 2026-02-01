@@ -6,7 +6,8 @@ import type {
   StageHistoryResponse,
   PipelineStageResponse,
   ErrorResponse,
-  TERMINAL_STATUSES,
+  TenantStatusRecord,
+  TenantStatusResponse,
 } from './types.ts';
 
 // CORS headers
@@ -89,21 +90,43 @@ export function formatStageResponse(stage: PipelineStageRecord): PipelineStageRe
   };
 }
 
-// Check if status is terminal (no more stage moves allowed)
-export function isTerminalStatus(status: string): boolean {
-  return ['HIRED', 'REJECTED', 'WITHDRAWN'].includes(status);
+// ============================================================================
+// DEPRECATED: These functions used hardcoded statuses.
+// Terminal/action lookups now happen in the RPC via tenant_application_statuses table.
+// Keeping for backwards compatibility but should not be used for new code.
+// ============================================================================
+
+/**
+ * @deprecated Use RPC which looks up is_terminal from tenant_application_statuses
+ */
+export function isTerminalStatus(_status: string): boolean {
+  // This function is deprecated - terminal status is now tenant-configurable
+  // The RPC handles this check via tenant_application_statuses table lookup
+  console.warn('isTerminalStatus is deprecated - terminal check now happens in RPC');
+  return false;
 }
 
-// Get action type from status change
-export function getActionFromStatus(status: string): string {
-  switch (status) {
-    case 'HIRED': return 'HIRE';
-    case 'REJECTED': return 'REJECT';
-    case 'WITHDRAWN': return 'WITHDRAW';
-    case 'ON_HOLD': return 'HOLD';
-    case 'ACTIVE': return 'ACTIVATE';
-    default: return 'MOVE';
-  }
+/**
+ * @deprecated Use RPC which looks up action_code from tenant_application_statuses
+ */
+export function getActionFromStatus(_status: string): string {
+  // This function is deprecated - action codes are now tenant-configurable
+  // The RPC handles this lookup via tenant_application_statuses table
+  console.warn('getActionFromStatus is deprecated - action lookup now happens in RPC');
+  return 'MOVE';
+}
+
+// Format tenant status record to API response
+export function formatStatusResponse(record: TenantStatusRecord): TenantStatusResponse {
+  return {
+    id: record.id,
+    statusCode: record.status_code,
+    displayName: record.display_name,
+    actionCode: record.action_code,
+    isTerminal: record.is_terminal,
+    sortOrder: record.sort_order,
+    colorHex: record.color_hex,
+  };
 }
 
 // Validate UUID format
