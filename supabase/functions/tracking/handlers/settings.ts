@@ -60,6 +60,16 @@ export async function createStatus(ctx: HandlerContext, req: Request): Promise<R
     ? body.action_code.toUpperCase().trim().replace(/\s+/g, '_')
     : statusCode;
 
+  // Validate outcome_type if provided
+  const validOutcomeTypes = ['ACTIVE', 'HOLD', 'SUCCESS', 'FAILURE', 'NEUTRAL'];
+  const outcomeType = body.outcome_type
+    ? body.outcome_type.toUpperCase().trim()
+    : 'NEUTRAL';
+
+  if (!validOutcomeTypes.includes(outcomeType)) {
+    throw new Error(`outcome_type must be one of: ${validOutcomeTypes.join(', ')}`);
+  }
+
   const { data, error } = await ctx.supabaseAdmin
     .from('tenant_application_statuses')
     .insert({
@@ -67,6 +77,7 @@ export async function createStatus(ctx: HandlerContext, req: Request): Promise<R
       status_code: statusCode,
       display_name: body.display_name.trim(),
       action_code: actionCode,
+      outcome_type: outcomeType,
       is_terminal: body.is_terminal ?? false,
       sort_order: body.sort_order ?? 99,
       color_hex: body.color_hex || null,
@@ -141,6 +152,15 @@ export async function updateStatus(ctx: HandlerContext, req: Request): Promise<R
       }
     }
     updates.is_terminal = body.is_terminal;
+  }
+
+  if (body.outcome_type !== undefined) {
+    const validOutcomeTypes = ['ACTIVE', 'HOLD', 'SUCCESS', 'FAILURE', 'NEUTRAL'];
+    const ot = body.outcome_type.toUpperCase().trim();
+    if (!validOutcomeTypes.includes(ot)) {
+      throw new Error(`outcome_type must be one of: ${validOutcomeTypes.join(', ')}`);
+    }
+    updates.outcome_type = ot;
   }
 
   if (body.sort_order !== undefined) {

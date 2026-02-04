@@ -23,7 +23,9 @@ export interface ApplicationPipelineStateRecord {
   job_id: string;
   pipeline_id: string;
   current_stage_id: string;
-  status: string;  // Now tenant-configurable, validated by DB
+  status: string;  // Denormalized presentation label, derived from outcome_type
+  outcome_type: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
+  is_terminal: boolean;
   entered_stage_at: string;
   created_at: string;
   updated_at: string;
@@ -67,6 +69,8 @@ export interface TrackingStateResponse {
   currentStageName: string;
   currentStageIndex: number;
   status: string;
+  outcomeType: string;
+  isTerminal: boolean;
   enteredStageAt: string;
   createdAt: string;
   updatedAt: string;
@@ -135,6 +139,25 @@ export interface UpdateStatusDTO {
 }
 
 // ============================================
+// Action Engine DTOs & Responses
+// ============================================
+
+export interface ExecuteActionDTO {
+  action: string;   // 'COMPLETE', 'FAIL', 'SKIP', 'HIRE', 'HOLD', 'ACTIVATE'
+  notes?: string;   // Required for some actions, optional for others
+}
+
+export interface AvailableActionResponse {
+  actionCode: string;
+  displayName: string;
+  outcomeType: string | null;
+  isTerminal: boolean;
+  requiresFeedback: boolean;
+  requiresNotes: boolean;
+  feedbackSubmitted: boolean;
+}
+
+// ============================================
 // Error Response
 // ============================================
 
@@ -171,6 +194,7 @@ export interface TenantStatusRecord {
   status_code: string;
   display_name: string;
   action_code: string;
+  outcome_type: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal: boolean;
   is_active: boolean;
   sort_order: number;
@@ -185,6 +209,7 @@ export interface TenantStatusResponse {
   statusCode: string;
   displayName: string;
   actionCode: string;
+  outcomeType: string;
   isTerminal: boolean;
   sortOrder: number;
   colorHex: string | null;
@@ -195,6 +220,7 @@ export interface CreateStatusDTO {
   status_code: string;
   display_name: string;
   action_code?: string;
+  outcome_type?: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal?: boolean;
   sort_order?: number;
   color_hex?: string;
@@ -203,6 +229,7 @@ export interface CreateStatusDTO {
 export interface UpdateTenantStatusDTO {
   display_name?: string;
   action_code?: string;
+  outcome_type?: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal?: boolean;
   sort_order?: number;
   color_hex?: string;

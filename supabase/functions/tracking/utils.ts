@@ -52,6 +52,8 @@ export function formatTrackingStateResponse(
     currentStageName: stage.stage_name,
     currentStageIndex: stage.order_index,
     status: state.status,
+    outcomeType: state.outcome_type,
+    isTerminal: state.is_terminal,
     enteredStageAt: state.entered_stage_at,
     createdAt: state.created_at,
     updatedAt: state.updated_at,
@@ -100,8 +102,6 @@ export function formatStageResponse(stage: PipelineStageRecord): PipelineStageRe
  * @deprecated Use RPC which looks up is_terminal from tenant_application_statuses
  */
 export function isTerminalStatus(_status: string): boolean {
-  // This function is deprecated - terminal status is now tenant-configurable
-  // The RPC handles this check via tenant_application_statuses table lookup
   console.warn('isTerminalStatus is deprecated - terminal check now happens in RPC');
   return false;
 }
@@ -110,8 +110,6 @@ export function isTerminalStatus(_status: string): boolean {
  * @deprecated Use RPC which looks up action_code from tenant_application_statuses
  */
 export function getActionFromStatus(_status: string): string {
-  // This function is deprecated - action codes are now tenant-configurable
-  // The RPC handles this lookup via tenant_application_statuses table
   console.warn('getActionFromStatus is deprecated - action lookup now happens in RPC');
   return 'MOVE';
 }
@@ -123,6 +121,7 @@ export function formatStatusResponse(record: TenantStatusRecord): TenantStatusRe
     statusCode: record.status_code,
     displayName: record.display_name,
     actionCode: record.action_code,
+    outcomeType: record.outcome_type,
     isTerminal: record.is_terminal,
     sortOrder: record.sort_order,
     colorHex: record.color_hex,
@@ -160,6 +159,9 @@ export function handleError(error: unknown): Response {
     status = 403;
     code = 'forbidden';
     details = 'Application is in a terminal state';
+  } else if (message.includes('Feedback required')) {
+    status = 400;
+    code = 'feedback_required';
   }
 
   const errorResponse: ErrorResponse = {

@@ -39,6 +39,8 @@ function formatRpcResult(
     currentStageName: stage.stage_name,
     currentStageIndex: stage.order_index,
     status: result.status,
+    outcomeType: (result as unknown as Record<string, unknown>).outcome_type as string || 'ACTIVE',
+    isTerminal: (result as unknown as Record<string, unknown>).is_terminal as boolean ?? false,
     enteredStageAt: result.entered_stage_at,
     createdAt: result.entered_stage_at, // RPC doesn't return created_at, use entered_stage_at
     updatedAt: result.updated_at,
@@ -79,11 +81,6 @@ function handleRpcError(error: { code?: string; message?: string }): never {
 
 // ============================================================================
 // POST /applications/:id/attach - Attach application to pipeline
-// ============================================================================
-// Uses atomic RPC: attach_application_to_pipeline_v1
-// - Validates tenant ownership from DB (not trusted params)
-// - Atomic state + history insert
-// - Idempotency via event_hash + ON CONFLICT
 // ============================================================================
 export async function attachToPipeline(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];
@@ -163,8 +160,6 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
 // ============================================================================
 // GET /applications/:id - Get tracking state
 // ============================================================================
-// No RPC needed - just a read operation
-// ============================================================================
 export async function getState(ctx: HandlerContext): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -205,6 +200,8 @@ export async function getState(ctx: HandlerContext): Promise<Response> {
     currentStageName: (stage as PipelineStageRecord).stage_name,
     currentStageIndex: (stage as PipelineStageRecord).order_index,
     status: state.status,
+    outcomeType: state.outcome_type || 'ACTIVE',
+    isTerminal: state.is_terminal ?? false,
     enteredStageAt: state.entered_stage_at,
     createdAt: state.created_at,
     updatedAt: state.updated_at,
@@ -215,12 +212,7 @@ export async function getState(ctx: HandlerContext): Promise<Response> {
 
 // ============================================================================
 // POST /applications/:id/move - Move to different stage
-// ============================================================================
-// Uses atomic RPC: move_application_stage_v1
-// - Validates tenant ownership from actual DB row
-// - Validates target stage belongs to same pipeline
-// - Atomic state update + history insert
-// - Idempotent: returns current state if already at target stage
+// DEPRECATED: Use POST /applications/:id/act with { action: "COMPLETE" }
 // ============================================================================
 export async function moveStage(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];
@@ -267,12 +259,7 @@ export async function moveStage(ctx: HandlerContext, req: Request): Promise<Resp
 
 // ============================================================================
 // PATCH /applications/:id/status - Update status
-// ============================================================================
-// Uses atomic RPC: update_application_status_v1
-// - Validates tenant ownership from actual DB row
-// - Blocks status changes from terminal states
-// - Atomic status update + history insert
-// - Idempotent: returns current state if already at target status
+// DEPRECATED: Use POST /applications/:id/act with { action: "HIRE" | "FAIL" | ... }
 // ============================================================================
 export async function updateStatus(ctx: HandlerContext, req: Request): Promise<Response> {
   const applicationId = ctx.pathParts[1];

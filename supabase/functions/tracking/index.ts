@@ -8,6 +8,7 @@ import * as stateHandlers from './handlers/state.ts';
 import * as historyHandlers from './handlers/history.ts';
 import * as boardHandlers from './handlers/board.ts';
 import * as settingsHandlers from './handlers/settings.ts';
+import * as actionHandlers from './handlers/actions.ts';
 
 // Parse path, removing function name prefix
 function parsePath(url: string): string[] {
@@ -109,6 +110,17 @@ Deno.serve(async (req: Request) => {
       const applicationId = pathParts[1];
       const action = pathParts[2];
 
+      // POST /applications/:id/act - Execute action (Action Engine)
+      // Role check is per-action inside RPC, not here
+      if (method === 'POST' && action === 'act') {
+        return await actionHandlers.executeAction(ctx, req);
+      }
+
+      // GET /applications/:id/actions - Get available actions for current stage
+      if (method === 'GET' && action === 'actions') {
+        return await actionHandlers.getAvailableActions(ctx);
+      }
+
       // POST /applications/:id/attach - Attach to pipeline (user call)
       if (method === 'POST' && action === 'attach') {
         if (!canManageTracking(user.role)) {
@@ -122,7 +134,7 @@ Deno.serve(async (req: Request) => {
         return await stateHandlers.getState(ctx);
       }
 
-      // POST /applications/:id/move - Move to different stage
+      // POST /applications/:id/move - Move to different stage (DEPRECATED: use /act)
       if (method === 'POST' && action === 'move') {
         if (!canManageTracking(user.role)) {
           throw new Error('Forbidden: ADMIN or HR role required');
@@ -130,7 +142,7 @@ Deno.serve(async (req: Request) => {
         return await stateHandlers.moveStage(ctx, req);
       }
 
-      // PATCH /applications/:id/status - Update status
+      // PATCH /applications/:id/status - Update status (DEPRECATED: use /act)
       if (method === 'PATCH' && action === 'status') {
         if (!canManageTracking(user.role)) {
           throw new Error('Forbidden: ADMIN or HR role required');
@@ -152,6 +164,16 @@ Deno.serve(async (req: Request) => {
 
     // ==================== SETTINGS ROUTES ====================
     // Routes: /settings/statuses[/:id]
+
+    // GET /settings/actions - List all stage actions
+    if (method === 'GET' && pathParts[0] === 'settings' && pathParts[1] === 'actions' && !pathParts[2]) {
+      return await actionHandlers.listStageActions(ctx);
+    }
+
+    // GET /settings/capabilities - List role capabilities
+    if (method === 'GET' && pathParts[0] === 'settings' && pathParts[1] === 'capabilities' && !pathParts[2]) {
+      return await actionHandlers.listCapabilities(ctx);
+    }
 
     if (pathParts[0] === 'settings' && pathParts[1] === 'statuses') {
       const statusId = pathParts[2];
