@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(terraform output:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "mcp__supabase__get_logs",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

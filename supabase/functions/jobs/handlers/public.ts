@@ -8,6 +8,47 @@ import type {
 import { formatPublicJobDto, formatPublicJobDetailDto } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
 
+// Helper: Attach application to tracking service
+// Returns true if successful, false if failed
+async function attachToTrackingService(
+  applicationId: string,
+  tenantId: string
+): Promise<boolean> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY')
+      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('Missing SUPABASE_URL or service role key');
+      return false;
+    }
+
+    const trackingUrl = `${supabaseUrl}/functions/v1/tracking/applications/${applicationId}/attach`;
+
+    const response = await fetch(trackingUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
+      },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Tracking attach failed: ${response.status} - ${errorText}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error calling tracking service:', error);
+    return false;
+  }
+}
+
 // GET /public/jobs - List public jobs
 export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise<Response> {
   const params = Object.fromEntries(ctx.url.searchParams);
@@ -151,6 +192,18 @@ export async function createPublicApplication(ctx: HandlerContext, req: Request)
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Attach to tracking service (mandatory - no floating applications)
+  const trackingAttached = await attachToTrackingService(data.id, ctx.tenantId);
+
+  if (!trackingAttached) {
+    // Rollback: delete the application
+    await ctx.supabaseAdmin
+      .from('applications')
+      .delete()
+      .eq('id', data.id);
+    throw new Error('Application submission failed - please try again');
+  }
 
   // Return minimal response matching NestJS PublicApplicationResponseDto
   const response: PublicApplicationResponse = {
