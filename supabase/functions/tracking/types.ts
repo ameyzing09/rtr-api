@@ -142,9 +142,30 @@ export interface UpdateStatusDTO {
 // Action Engine DTOs & Responses
 // ============================================
 
+// Extended ExecuteActionDTO with accountability parameters
 export interface ExecuteActionDTO {
-  action: string;   // 'COMPLETE', 'FAIL', 'SKIP', 'HIRE', 'HOLD', 'ACTIVATE'
-  notes?: string;   // Required for some actions, optional for others
+  action: string;
+  notes?: string;
+  override_reason?: string;   // Required if bypassing rules
+  reviewed_by?: string;       // Required if feedback-gated
+  approved_by?: string;       // Required if forcing past block
+}
+
+// Signal condition types (used by action engine for signal gate display)
+export interface SignalCondition {
+  signal: string;
+  operator: '=' | '!=' | '>' | '>=' | '<' | '<=';
+  value: unknown;
+  onMissing: 'BLOCK' | 'ALLOW' | 'WARN';
+  currentValue: unknown | null;
+  met: boolean;
+  warning?: boolean;
+  reason?: string;
+}
+
+export interface SignalConditions {
+  logic: 'ALL' | 'ANY';
+  conditions: SignalCondition[];
 }
 
 export interface AvailableActionResponse {
@@ -155,6 +176,8 @@ export interface AvailableActionResponse {
   requiresFeedback: boolean;
   requiresNotes: boolean;
   feedbackSubmitted: boolean;
+  signalConditions?: SignalConditions;
+  signalsMet: boolean;
 }
 
 // ============================================

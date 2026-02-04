@@ -3,6 +3,8 @@ import type {
   PipelineStageRecord,
   ExecuteActionDTO,
   AvailableActionResponse,
+  SignalConditions,
+  SignalCondition,
 } from '../types.ts';
 import {
   jsonResponse,
@@ -82,6 +84,10 @@ function handleRpcError(error: { code?: string; message?: string }): never {
   if (msg.includes('INVALID_STATUS')) {
     throw new Error(`Bad request: ${msg.split(': ').slice(1).join(': ')}`);
   }
+  if (msg.includes('SIGNALS_NOT_MET')) {
+    const detail = msg.split(': ').slice(1).join(': ');
+    throw new Error(`Signals not met: ${detail}`);
+  }
 
   throw new Error(msg);
 }
@@ -106,7 +112,7 @@ export async function executeAction(ctx: HandlerContext, req: Request): Promise<
   // Normalize action code
   const actionCode = body.action.toUpperCase().trim();
 
-  // Call the atomic RPC — NO role param, capability derived from user_id
+  // Call the atomic RPC with extended parameters for accountability chain
   const { data: result, error: rpcError } = await ctx.supabaseAdmin
     .rpc('execute_action_v2', {
       p_application_id: applicationId,
@@ -114,6 +120,9 @@ export async function executeAction(ctx: HandlerContext, req: Request): Promise<
       p_user_id: ctx.userId,
       p_action_code: actionCode,
       p_notes: body.notes || null,
+      p_override_reason: body.override_reason || null,
+      p_reviewed_by: body.reviewed_by || null,
+      p_approved_by: body.approved_by || null,
     });
 
   if (rpcError) {
@@ -247,6 +256,33 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
     feedbackCount = count ?? 0;
   }
 
+  // Get signal status for each action that has signal_conditions
+  const actionsWithConditions = contextualActions.filter(
+    (a: { signal_conditions: unknown }) => a.signal_conditions !== null
+  );
+
+  // Batch fetch signal status for all actions with conditions
+  const signalStatusMap: Record<string, { signalsMet: boolean; conditions: SignalCondition[]; logic?: string }> = {};
+
+  for (const action of actionsWithConditions) {
+    const a = action as { action_code: string };
+    const { data: signalStatus } = await ctx.supabaseAdmin
+      .rpc('get_action_signal_status', {
+        p_application_id: applicationId,
+        p_action_code: a.action_code,
+        p_stage_id: state.current_stage_id,
+        p_tenant_id: ctx.tenantId,
+      });
+
+    if (signalStatus) {
+      signalStatusMap[a.action_code] = signalStatus as {
+        signalsMet: boolean;
+        conditions: SignalCondition[];
+        logic?: string;
+      };
+    }
+  }
+
   // Format response
   const availableActions: AvailableActionResponse[] = contextualActions.map(
     (a: {
@@ -256,15 +292,31 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
       is_terminal: boolean;
       requires_feedback: boolean;
       requires_notes: boolean;
-    }) => ({
-      actionCode: a.action_code,
-      displayName: a.display_name,
-      outcomeType: a.outcome_type,
-      isTerminal: a.is_terminal,
-      requiresFeedback: a.requires_feedback,
-      requiresNotes: a.requires_notes,
-      feedbackSubmitted: a.requires_feedback ? feedbackCount > 0 : true,
-    })
+      signal_conditions: { logic: string; conditions: unknown[] } | null;
+    }) => {
+      const signalStatus = signalStatusMap[a.action_code];
+
+      // Build signal conditions response if action has conditions
+      let signalConditions: SignalConditions | undefined;
+      if (a.signal_conditions && signalStatus) {
+        signalConditions = {
+          logic: (signalStatus.logic || a.signal_conditions.logic || 'ALL') as 'ALL' | 'ANY',
+          conditions: signalStatus.conditions || [],
+        };
+      }
+
+      return {
+        actionCode: a.action_code,
+        displayName: a.display_name,
+        outcomeType: a.outcome_type,
+        isTerminal: a.is_terminal,
+        requiresFeedback: a.requires_feedback,
+        requiresNotes: a.requires_notes,
+        feedbackSubmitted: a.requires_feedback ? feedbackCount > 0 : true,
+        signalConditions,
+        signalsMet: signalStatus ? signalStatus.signalsMet : true,
+      };
+    }
   );
 
   return jsonResponse({
@@ -299,6 +351,7 @@ export async function listStageActions(ctx: HandlerContext): Promise<Response> {
       requires_feedback,
       requires_notes,
       required_capability,
+      signal_conditions,
       sort_order,
       is_active,
       pipeline_stages!inner (
@@ -335,6 +388,7 @@ export async function listStageActions(ctx: HandlerContext): Promise<Response> {
       requiresFeedback: a.requires_feedback,
       requiresNotes: a.requires_notes,
       requiredCapability: a.required_capability,
+      signalConditions: a.signal_conditions,
       sortOrder: a.sort_order,
     };
   });
