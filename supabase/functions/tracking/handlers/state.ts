@@ -39,8 +39,8 @@ function formatRpcResult(
     currentStageName: stage.stage_name,
     currentStageIndex: stage.order_index,
     status: result.status,
-    outcomeType: (result as Record<string, unknown>).outcome_type as string || 'ACTIVE',
-    isTerminal: (result as Record<string, unknown>).is_terminal as boolean ?? false,
+    outcomeType: (result as unknown as Record<string, unknown>).outcome_type as string || 'ACTIVE',
+    isTerminal: (result as unknown as Record<string, unknown>).is_terminal as boolean ?? false,
     enteredStageAt: result.entered_stage_at,
     createdAt: result.entered_stage_at, // RPC doesn't return created_at, use entered_stage_at
     updatedAt: result.updated_at,
