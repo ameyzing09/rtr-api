@@ -68,6 +68,12 @@ export interface ApplicationResponse {
   updatedAt: string;
 }
 
+export interface CascadeInfoResponse {
+  jobId: string;
+  applicationCount: number;
+  activeApplicationCount: number;
+}
+
 // Public API response types (snake_case - matches NestJS public endpoints)
 export interface PublicJobDto {
   id: string;

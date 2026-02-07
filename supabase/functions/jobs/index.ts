@@ -127,6 +127,11 @@ Deno.serve(async (req: Request) => {
           : ['job', ...pathParts];
         ctx.pathParts = normalizedParts;
 
+        // GET /job/:id/cascade-info - Get cascade deletion info
+        if (method === 'GET' && action === 'cascade-info') {
+          return await jobHandlers.getCascadeInfo(ctx);
+        }
+
         // PUT /job/:id/publish - Publish job
         if (method === 'PUT' && action === 'publish') {
           return await jobHandlers.publishJob(ctx);
