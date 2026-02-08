@@ -64,11 +64,11 @@ export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise
     .or(`expire_at.is.null,expire_at.gte.${now}`)
     .order('publish_at', { ascending: false });
 
-  // Search filter (across id, title, description, department, location)
+  // Search filter (across title, description, department, location)
   if (params.search) {
     const escapedSearch = params.search.replace(/%/g, '\\%').replace(/_/g, '\\_');
     const searchTerm = `%${escapedSearch}%`;
-    query = query.or(`id.ilike.${searchTerm},title.ilike.${searchTerm},description.ilike.${searchTerm},department.ilike.${searchTerm},location.ilike.${searchTerm}`);
+    query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm},department.ilike.${searchTerm},location.ilike.${searchTerm}`);
   }
 
   // Department filter
