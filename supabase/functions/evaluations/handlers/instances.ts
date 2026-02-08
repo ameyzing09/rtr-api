@@ -3,6 +3,7 @@ import type {
   EvaluationTemplateRecord,
   EvaluationInstanceRecord,
   EvaluationInstanceResponse,
+  MyPendingEvaluationResponse,
   CreateEvaluationInstanceDTO,
   CompleteEvaluationDTO,
 } from '../types.ts';
@@ -283,4 +284,75 @@ export async function completeEvaluation(
   }
 
   return jsonResponse({ data: formatInstanceResponse(data as EvaluationInstanceRecord) });
+}
+
+// GET /my-pending - List evaluations assigned to current user that are pending
+export async function listMyPendingEvaluations(ctx: HandlerContext): Promise<Response> {
+  // Query 1: Get evaluation IDs where this user is a pending participant
+  const { data: participantRows, error: partError } = await ctx.supabaseAdmin
+    .from('evaluation_participants')
+    .select('evaluation_id, status')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('user_id', ctx.userId!)
+    .eq('status', 'PENDING');
+
+  if (partError) {
+    throw new Error(`Failed to fetch participant records: ${partError.message}`);
+  }
+
+  if (!participantRows || participantRows.length === 0) {
+    return jsonResponse({ data: [] });
+  }
+
+  const evaluationIds = participantRows.map((p: { evaluation_id: string }) => p.evaluation_id);
+
+  // Query 2: Get evaluation instances with template, stage, and application details
+  const { data: evaluations, error: evalError } = await ctx.supabaseAdmin
+    .from('evaluation_instances')
+    .select(`
+      *,
+      evaluation_templates!inner (
+        name
+      ),
+      pipeline_stages (
+        stage_name
+      ),
+      applications!inner (
+        applicant_name,
+        applicant_email
+      )
+    `)
+    .eq('tenant_id', ctx.tenantId)
+    .in('id', evaluationIds)
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+    .order('created_at', { ascending: false });
+
+  if (evalError) {
+    throw new Error(`Failed to fetch evaluations: ${evalError.message}`);
+  }
+
+  const formatted: MyPendingEvaluationResponse[] = (evaluations || []).map(
+    (d: Record<string, unknown>) => {
+      const template = d.evaluation_templates as { name: string } | null;
+      const stage = d.pipeline_stages as { stage_name: string } | null;
+      const application = d.applications as { applicant_name: string; applicant_email: string } | null;
+
+      return {
+        evaluationId: d.id as string,
+        applicationId: d.application_id as string,
+        templateId: d.template_id as string,
+        templateName: template?.name || '',
+        stageId: (d.stage_id as string) || null,
+        stageName: stage?.stage_name || null,
+        evaluationStatus: d.status as MyPendingEvaluationResponse['evaluationStatus'],
+        scheduledAt: (d.scheduled_at as string) || null,
+        applicantName: application?.applicant_name || '',
+        applicantEmail: application?.applicant_email || '',
+        participantStatus: 'PENDING' as const,
+        createdAt: d.created_at as string,
+      };
+    }
+  );
+
+  return jsonResponse({ data: formatted });
 }
