@@ -10,6 +10,7 @@ import * as participantHandlers from './handlers/participants.ts';
 import * as responseHandlers from './handlers/responses.ts';
 import * as signalHandlers from './handlers/signals.ts';
 import * as auditHandlers from './handlers/audit.ts';
+import * as stageEvaluationHandlers from './handlers/stage-evaluations.ts';
 
 // Parse path, removing function name prefix
 function parsePath(url: string): string[] {
@@ -74,6 +75,12 @@ Deno.serve(async (req: Request) => {
       isServiceRole: false,
     };
 
+    // ==================== MY PENDING EVALUATIONS ====================
+    // GET /my-pending - List evaluations assigned to current user
+    if (method === 'GET' && pathParts[0] === 'my-pending') {
+      return await instanceHandlers.listMyPendingEvaluations(ctx);
+    }
+
     // ==================== SETTINGS ROUTES ====================
     // Routes: /settings/evaluation-templates[/:id]
     if (pathParts[0] === 'settings' && pathParts[1] === 'evaluation-templates') {
@@ -106,6 +113,41 @@ Deno.serve(async (req: Request) => {
           throw new Error('Forbidden: ADMIN role required');
         }
         return await templateHandlers.deleteEvaluationTemplate(ctx);
+      }
+    }
+
+    // ==================== STAGE EVALUATION SETTINGS ROUTES ====================
+    // Routes: /settings/stage-evaluations[/:id]
+    if (pathParts[0] === 'settings' && pathParts[1] === 'stage-evaluations') {
+      const stageEvalId = pathParts[2];
+
+      // GET /settings/stage-evaluations - List stage evaluations
+      if (method === 'GET' && !stageEvalId) {
+        return await stageEvaluationHandlers.listStageEvaluations(ctx);
+      }
+
+      // POST /settings/stage-evaluations - Create stage evaluation (ADMIN only)
+      if (method === 'POST' && !stageEvalId) {
+        if (!canManageSettings(user.role)) {
+          throw new Error('Forbidden: ADMIN role required');
+        }
+        return await stageEvaluationHandlers.createStageEvaluation(ctx, req);
+      }
+
+      // PATCH /settings/stage-evaluations/:id - Update stage evaluation (ADMIN only)
+      if (method === 'PATCH' && stageEvalId) {
+        if (!canManageSettings(user.role)) {
+          throw new Error('Forbidden: ADMIN role required');
+        }
+        return await stageEvaluationHandlers.updateStageEvaluation(ctx, req);
+      }
+
+      // DELETE /settings/stage-evaluations/:id - Delete stage evaluation (ADMIN only)
+      if (method === 'DELETE' && stageEvalId) {
+        if (!canManageSettings(user.role)) {
+          throw new Error('Forbidden: ADMIN role required');
+        }
+        return await stageEvaluationHandlers.deleteStageEvaluation(ctx);
       }
     }
 

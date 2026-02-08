@@ -175,6 +175,21 @@ export interface EvaluationInstanceResponse {
   updatedAt: string;
 }
 
+export interface MyPendingEvaluationResponse {
+  evaluationId: string;
+  applicationId: string;
+  templateId: string;
+  templateName: string;
+  stageId: string | null;
+  stageName: string | null;
+  evaluationStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  scheduledAt: string | null;
+  applicantName: string;
+  applicantEmail: string;
+  participantStatus: 'PENDING' | 'SUBMITTED' | 'DECLINED';
+  createdAt: string;
+}
+
 export interface EvaluationParticipantResponse {
   id: string;
   evaluationId: string;
@@ -276,6 +291,52 @@ export interface SetManualSignalDTO {
   signal_type: 'boolean' | 'integer' | 'float' | 'text';
   value: string;
   note?: string;
+}
+
+// ============================================
+// Stage Evaluation Records & DTOs
+// ============================================
+
+export interface StageEvaluationRecord {
+  id: string;
+  tenant_id: string;
+  stage_id: string;
+  evaluation_template_id: string;
+  execution_order: number;
+  auto_create: boolean;
+  required: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StageEvaluationResponse {
+  id: string;
+  stageId: string;
+  evaluationTemplateId: string;
+  templateName?: string;
+  stageName?: string;
+  executionOrder: number;
+  autoCreate: boolean;
+  required: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateStageEvaluationDTO {
+  stage_id: string;
+  evaluation_template_id: string;
+  execution_order?: number;
+  auto_create?: boolean;
+  required?: boolean;
+}
+
+export interface UpdateStageEvaluationDTO {
+  execution_order?: number;
+  auto_create?: boolean;
+  required?: boolean;
+  is_active?: boolean;
 }
 
 // ============================================
