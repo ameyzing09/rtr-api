@@ -66,7 +66,8 @@ export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise
 
   // Search filter (across id, title, description, department, location)
   if (params.search) {
-    const searchTerm = `%${params.search}%`;
+    const escapedSearch = params.search.replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const searchTerm = `%${escapedSearch}%`;
     query = query.or(`id.ilike.${searchTerm},title.ilike.${searchTerm},description.ilike.${searchTerm},department.ilike.${searchTerm},location.ilike.${searchTerm}`);
   }
 
