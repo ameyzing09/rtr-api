@@ -21,6 +21,11 @@ export function extractSubdomain(host: string): string | null {
     return null;
   }
 
+  // Handle tenant.localhost (local development)
+  if (parts.length === 2 && parts[1] === 'localhost') {
+    return parts[0];
+  }
+
   // Handle subdomain.domain.tld (return subdomain)
   if (parts.length >= 3) {
     return parts[0];
@@ -79,15 +84,12 @@ export async function resolveTenantFromHost(
         .eq('id', headerTenantId)
         .single();
 
-      if (error) {
-        throw new Error(`Tenant lookup failed: ${error.message}`);
-      }
-      if (!tenant) {
-        throw new Error(`Tenant not found for ID: ${headerTenantId}`);
+      if (error || !tenant) {
+        throw new Error('Tenant not found');
       }
       return tenant.id;
     }
-    throw new Error('Could not resolve tenant: no subdomain or X-Tenant-ID header');
+    throw new Error('Could not resolve tenant');
   }
 
   // Look up tenant by slug
@@ -98,7 +100,7 @@ export async function resolveTenantFromHost(
     .single();
 
   if (error || !tenant) {
-    throw new Error(`Tenant not found for slug: ${subdomain} (host: ${host})`);
+    throw new Error('Tenant not found');
   }
 
   return tenant.id;

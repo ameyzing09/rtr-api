@@ -94,6 +94,47 @@ export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknow
   return result;
 }
 
+// Attach application to tracking service
+// Returns true if successful, false if failed
+export async function attachToTrackingService(
+  applicationId: string,
+  tenantId: string
+): Promise<boolean> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY')
+      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('Missing SUPABASE_URL or service role key');
+      return false;
+    }
+
+    const trackingUrl = `${supabaseUrl}/functions/v1/tracking/applications/${applicationId}/attach`;
+
+    const response = await fetch(trackingUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
+      },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Tracking attach failed: ${response.status} - ${errorText}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error calling tracking service:', error);
+    return false;
+  }
+}
+
 // Error handler with appropriate HTTP status codes
 export function handleError(error: unknown): Response {
   const err = error as Error;
@@ -112,6 +153,12 @@ export function handleError(error: unknown): Response {
   } else if (err.message.includes('already exists') || err.message.includes('duplicate')) {
     status = 409;
     code = 'conflict';
+  } else if (err.message.includes('expired')) {
+    status = 410;
+    code = 'token_expired';
+  } else if (err.message.includes('Rate limit') || err.message.includes('Too many')) {
+    status = 429;
+    code = 'rate_limit_exceeded';
   }
 
   return jsonResponse({ code, message: err.message }, status);

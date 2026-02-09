@@ -6,7 +6,15 @@
       "Bash(ls:*)",
       "mcp__supabase__get_logs",
       "Bash(curl:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(for file in \"C:\\\\Projects\\\\rtr-api\\\\supabase\\\\migrations\"/*.sql)",
+      "Bash(do)",
+      "Bash(if grep -q \"create_public_application\\\\|get_application_by_token\" \"$file\")",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(fi)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

@@ -251,18 +251,9 @@ export async function getCascadeInfo(ctx: HandlerContext): Promise<Response> {
     .eq('job_id', jobId)
     .eq('tenant_id', ctx.tenantId);
 
-  // Count active (non-terminal) applications via tracking state
-  const { count: activeApplicationCount } = await ctx.supabaseAdmin
-    .from('application_pipeline_state')
-    .select('id', { count: 'exact', head: true })
-    .eq('job_id', jobId)
-    .eq('tenant_id', ctx.tenantId)
-    .eq('is_terminal', false);
-
   const result: CascadeInfoResponse = {
     jobId,
     applicationCount: applicationCount || 0,
-    activeApplicationCount: activeApplicationCount || 0,
   };
 
   return jsonResponse({ data: result });
