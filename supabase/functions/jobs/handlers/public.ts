@@ -3,51 +3,10 @@ import type {
   JobRecord,
   PublicJobsResponse,
   PublicJobDetailDto,
-  PublicApplicationResponse,
+  PublicApplicationStatusResponse,
 } from '../types.ts';
-import { formatPublicJobDto, formatPublicJobDetailDto } from '../utils.ts';
+import { formatPublicJobDto, formatPublicJobDetailDto, attachToTrackingService } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
-
-// Helper: Attach application to tracking service
-// Returns true if successful, false if failed
-async function attachToTrackingService(
-  applicationId: string,
-  tenantId: string
-): Promise<boolean> {
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY')
-      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Missing SUPABASE_URL or service role key');
-      return false;
-    }
-
-    const trackingUrl = `${supabaseUrl}/functions/v1/tracking/applications/${applicationId}/attach`;
-
-    const response = await fetch(trackingUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'apikey': serviceRoleKey,
-      },
-      body: JSON.stringify({ tenant_id: tenantId }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Tracking attach failed: ${response.status} - ${errorText}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error calling tracking service:', error);
-    return false;
-  }
-}
 
 // GET /public/jobs - List public jobs
 export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise<Response> {
@@ -133,84 +92,149 @@ export async function getPublicJobById(ctx: HandlerContext): Promise<Response> {
   return jsonResponse(response);
 }
 
-// POST /public/applications - Submit job application
-export async function createPublicApplication(ctx: HandlerContext, req: Request): Promise<Response> {
-  const body = await req.json();
-  const now = new Date().toISOString();
-
-  // Validate required fields (matches NestJS CreatePublicApplicationDto)
-  if (!body.job_id) {
-    throw new Error('job_id is required');
+// POST /public/jobs/:jobId/apply - Apply to a public job
+export async function applyToJob(ctx: HandlerContext, req: Request): Promise<Response> {
+  const jobId = ctx.pathParts[2]; // /public/jobs/:jobId/apply
+  if (!jobId) {
+    throw new Error('Job ID is required');
   }
-  if (!body.applicant_name) {
+
+  const body = await req.json();
+
+  // Validate required fields
+  if (!body.applicant_name || typeof body.applicant_name !== 'string' || !body.applicant_name.trim()) {
     throw new Error('applicant_name is required');
   }
-  if (!body.applicant_email) {
+  if (!body.applicant_email || typeof body.applicant_email !== 'string' || !body.applicant_email.trim()) {
     throw new Error('applicant_email is required');
   }
 
-  // Validate job exists, is public, and accepting applications
-  const { data: job, error: jobError } = await ctx.supabaseAdmin
-    .from('jobs')
-    .select('id, is_public, publish_at, expire_at')
-    .eq('id', body.job_id)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
+  const email = body.applicant_email.trim().toLowerCase();
+  const name = body.applicant_name.trim();
 
-  if (jobError || !job) {
-    throw new Error('Job not found or not available for applications');
-  }
-
-  // Validate job is public
-  if (!job.is_public) {
-    throw new Error('Job not found or not available for applications');
-  }
-
-  // Validate job is published
-  if (!job.publish_at || job.publish_at > now) {
-    throw new Error('Job not found or not available for applications');
-  }
-
-  // Validate job is not expired
-  if (job.expire_at && job.expire_at < now) {
-    throw new Error('Job not found or not available for applications');
-  }
-
-  // Create application with PENDING status
-  const { data, error } = await ctx.supabaseAdmin
+  // Rate limit check: max 5 applications per email per tenant in 15 minutes
+  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { count: recentCount, error: rateLimitError } = await ctx.supabaseAdmin
     .from('applications')
-    .insert({
-      tenant_id: ctx.tenantId,
-      job_id: body.job_id,
-      applicant_name: body.applicant_name,
-      applicant_email: body.applicant_email,
-      applicant_phone: body.applicant_phone || null,
-      resume_url: body.resume_url || null,
-      cover_letter: body.cover_letter || null,
-      status: 'PENDING',
-    })
-    .select('id, status')
-    .single();
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('applicant_email', email)
+    .gte('created_at', fifteenMinAgo);
 
-  if (error) throw new Error(error.message);
-
-  // Attach to tracking service (mandatory - no floating applications)
-  const trackingAttached = await attachToTrackingService(data.id, ctx.tenantId);
-
-  if (!trackingAttached) {
-    // Rollback: delete the application
-    await ctx.supabaseAdmin
-      .from('applications')
-      .delete()
-      .eq('id', data.id);
-    throw new Error('Application submission failed - please try again');
+  if (rateLimitError) {
+    console.error('Rate limit check failed:', rateLimitError.message);
   }
 
-  // Return minimal response matching NestJS PublicApplicationResponseDto
-  const response: PublicApplicationResponse = {
-    id: data.id,
-    status: data.status,
+  if ((recentCount ?? 0) >= 5) {
+    throw new Error('Too many applications submitted recently. Please try again later.');
+  }
+
+  // Extract IP and user-agent for audit
+  const ipAddress = req.headers.get('x-forwarded-for')
+    || req.headers.get('x-real-ip')
+    || 'unknown';
+  const userAgent = req.headers.get('user-agent') || 'unknown';
+
+  // Call atomic RPC
+  const { data: rpcResult, error: rpcError } = await ctx.supabaseAdmin
+    .rpc('create_public_application_v1', {
+      p_tenant_id: ctx.tenantId,
+      p_job_id: jobId,
+      p_applicant_name: name,
+      p_applicant_email: email,
+      p_applicant_phone: body.applicant_phone || null,
+      p_resume_url: body.resume_url || null,
+      p_cover_letter: body.cover_letter || null,
+      p_ip_address: ipAddress,
+      p_user_agent: userAgent,
+    });
+
+  if (rpcError) {
+    // Surface job-not-found errors as 404
+    if (rpcError.message.includes('not found') || rpcError.message.includes('not available')) {
+      throw new Error('Job not found or not available for applications');
+    }
+    throw new Error(rpcError.message);
+  }
+
+  const result = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
+
+  if (!result || !result.application_id) {
+    throw new Error('Application submission failed - unexpected response');
+  }
+
+  // If new application, attach to tracking pipeline
+  if (result.is_new) {
+    const trackingAttached = await attachToTrackingService(result.application_id, ctx.tenantId);
+
+    if (!trackingAttached) {
+      // Rollback: delete token and application on tracking failure
+      await ctx.supabaseAdmin
+        .from('candidate_access_tokens')
+        .delete()
+        .eq('application_id', result.application_id);
+      await ctx.supabaseAdmin
+        .from('applications')
+        .delete()
+        .eq('id', result.application_id);
+      throw new Error('Application submission failed - please try again');
+    }
+  }
+
+  return jsonResponse(
+    {
+      id: result.application_id,
+      status: 'PENDING',
+      candidate_access_token: result.access_token,
+    },
+    result.is_new ? 201 : 200
+  );
+}
+
+// GET /public/applications/:token - Get application status by candidate access token
+export async function getApplicationByToken(ctx: HandlerContext): Promise<Response> {
+  const token = ctx.pathParts[2]; // /public/applications/:token
+
+  // UUID format check — malformed tokens get the same 404 as missing ones
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(token)) {
+    throw new Error('Application not found');
+  }
+
+  // Pre-validate token existence and expiry for distinct error messages
+  const { data: tokenRow, error: tokenError } = await ctx.supabaseAdmin
+    .from('candidate_access_tokens')
+    .select('expires_at')
+    .eq('token', token)
+    .single();
+
+  if (tokenError || !tokenRow) {
+    throw new Error('Application not found');
+  }
+
+  if (new Date(tokenRow.expires_at) <= new Date()) {
+    throw new Error('Access token has expired. Please reapply or contact the recruiter.');
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .rpc('get_application_by_token_v1', { p_token: token });
+
+  if (error) {
+    throw new Error('Application not found');
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    throw new Error('Application not found');
+  }
+
+  const response: PublicApplicationStatusResponse = {
+    jobTitle: row.job_title,
+    status: row.status_display_name,
+    stageName: row.current_stage,
+    appliedAt: row.applied_at,
+    lastUpdatedAt: row.last_updated_at,
   };
 
-  return jsonResponse(response, 201);
+  return jsonResponse(response);
 }

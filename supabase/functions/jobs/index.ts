@@ -57,14 +57,19 @@ Deno.serve(async (req: Request) => {
         return await publicHandlers.listPublicJobs(ctx, req);
       }
 
+      // POST /public/jobs/:jobId/apply - Apply to a public job
+      if (method === 'POST' && pathParts[1] === 'jobs' && pathParts[2] && pathParts[3] === 'apply') {
+        return await publicHandlers.applyToJob(ctx, req);
+      }
+
       // GET /public/jobs/:id - Get public job by ID
       if (method === 'GET' && pathParts[1] === 'jobs' && pathParts[2]) {
         return await publicHandlers.getPublicJobById(ctx);
       }
 
-      // POST /public/applications - Submit application
-      if (method === 'POST' && fullPath === 'public/applications') {
-        return await publicHandlers.createPublicApplication(ctx, req);
+      // GET /public/applications/:token - Get application status by token
+      if (method === 'GET' && pathParts[1] === 'applications' && pathParts[2]) {
+        return await publicHandlers.getApplicationByToken(ctx);
       }
 
       return jsonResponse({ code: 'not_found', message: 'Endpoint not found' }, 404);

@@ -138,7 +138,7 @@ export async function executeAction(ctx: HandlerContext, req: Request): Promise<
     .single();
 
   if (stageError || !stage) {
-    throw new Error('Stage not found');
+    throw new Error('Current stage not found after action execution');
   }
 
   return jsonResponse({
