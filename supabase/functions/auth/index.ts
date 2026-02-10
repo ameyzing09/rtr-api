@@ -92,6 +92,16 @@ Deno.serve(async (req: Request) => {
       return await userHandlers.createTenantUser(ctx, req);
     }
 
+    // PATCH /users/:id - Update tenant user
+    if (method === 'PATCH' && pathParts[0] === 'users' && pathParts.length === 2) {
+      return await userHandlers.updateTenantUser(ctx, req);
+    }
+
+    // POST /users/:id/reset-password - Reset tenant user password
+    if (method === 'POST' && pathParts[0] === 'users' && pathParts[2] === 'reset-password' && pathParts.length === 3) {
+      return await userHandlers.resetTenantUserPassword(ctx, req);
+    }
+
     // PUT /tenant/settings - Update tenant settings
     if (method === 'PUT' && fullPath === 'tenant/settings') {
       return await userHandlers.updateTenantSettings(ctx, req);

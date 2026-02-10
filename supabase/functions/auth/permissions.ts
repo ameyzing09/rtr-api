@@ -7,13 +7,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   ADMIN: [
     'job:*', 'application:*', 'pipeline:*', 'member:*', 'interview:*',
-    'settings:*', 'billing:*', 'integrations:*', 'feedback:*', 'analytics:read',
+    'settings:*', 'billing:*', 'integrations:*', 'feedback:*', 'evaluation:*', 'analytics:read',
   ],
   HR: [
-    'job:*', 'application:*', 'pipeline:*', 'member:*', 'interview:*', 'feedback:*',
+    'job:*', 'application:*', 'pipeline:*', 'member:*', 'interview:*', 'feedback:*', 'evaluation:*',
   ],
   INTERVIEWER: [
-    'interview:*', 'feedback:*', 'application:read', 'interview:list', 'application:list',
+    'interview:*', 'feedback:*', 'evaluation:*', 'application:read', 'interview:list', 'application:list',
   ],
   VIEWER: [],
   CANDIDATE: [

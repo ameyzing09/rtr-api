@@ -1,4 +1,7 @@
 {
+    "scripts": {
+    "deploy": "supabase functions deploy --no-verify-jwt"
+  },
   "devDependencies": {
     "supabase": "^2.74.4"
   }

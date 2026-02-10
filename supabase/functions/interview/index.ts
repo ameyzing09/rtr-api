@@ -1,11 +1,10 @@
 import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
 import { corsResponse, handleError, jsonResponse, textResponse } from './utils.ts';
-import { getTenantIdFromAuth, getUserFromToken, canViewInterviews, canManageInterviews, canSubmitFeedback } from './middleware.ts';
+import { getTenantIdFromAuth, getUserFromToken, canViewInterviews, canManageInterviews } from './middleware.ts';
 import type { HandlerContext } from './types.ts';
 
 // Import handlers
 import * as interviewHandlers from './handlers/interviews.ts';
-import * as feedbackHandlers from './handlers/feedback.ts';
 
 // Parse path, removing function name prefix
 function parsePath(url: string): string[] {
@@ -71,7 +70,7 @@ Deno.serve(async (req: Request) => {
     };
 
     // ==================== MY PENDING INTERVIEWS ====================
-    // GET /my-pending - List rounds assigned to current user with no feedback yet
+    // GET /my-pending - List rounds assigned to current user with pending evaluation
     if (method === 'GET' && pathParts[0] === 'my-pending') {
       return await interviewHandlers.listMyPending(ctx);
     }
@@ -109,18 +108,6 @@ Deno.serve(async (req: Request) => {
           throw new Error('Forbidden: HR role required');
         }
         return await interviewHandlers.updateInterview(ctx, req);
-      }
-    }
-
-    // ==================== FEEDBACK ROUTES ====================
-    // Routes: /rounds/:roundId/feedback
-    if (pathParts[0] === 'rounds' && pathParts[1] && pathParts[2] === 'feedback') {
-      // POST /rounds/:roundId/feedback - Submit feedback for a round
-      if (method === 'POST') {
-        if (!canSubmitFeedback(user.role)) {
-          throw new Error('Forbidden: INTERVIEWER role required');
-        }
-        return await feedbackHandlers.submitFeedback(ctx, req);
       }
     }
 

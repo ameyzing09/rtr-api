@@ -37,6 +37,7 @@ export interface InterviewRoundRecord {
   interview_id: string;
   round_type: string;
   sequence: number;
+  evaluation_instance_id: string | null;
   created_at: string;
 }
 
@@ -45,16 +46,6 @@ export interface InterviewerAssignmentRecord {
   tenant_id: string;
   round_id: string;
   user_id: string;
-  created_at: string;
-}
-
-export interface InterviewFeedbackRecord {
-  id: string;
-  tenant_id: string;
-  round_id: string;
-  submitted_by: string;
-  decision: 'PASS' | 'FAIL' | 'NEUTRAL';
-  notes: string | null;
   created_at: string;
 }
 
@@ -77,9 +68,9 @@ export interface InterviewRoundResponse {
   id: string;
   roundType: string;
   sequence: number;
+  evaluationInstanceId: string | null;
   createdAt: string;
   assignments?: InterviewerAssignmentResponse[];
-  feedback?: InterviewFeedbackResponse[];
 }
 
 export interface InterviewerAssignmentResponse {
@@ -88,21 +79,16 @@ export interface InterviewerAssignmentResponse {
   createdAt: string;
 }
 
-export interface InterviewFeedbackResponse {
-  id: string;
-  submittedBy: string;
-  decision: string;
-  notes: string | null;
-  createdAt: string;
-}
-
 export interface MyPendingRoundResponse {
   roundId: string;
-  roundType: string;
-  sequence: number;
   interviewId: string;
   applicationId: string;
-  pipelineStageId: string;
+  applicantName: string;
+  jobTitle: string;
+  stage: { id: string; name: string };
+  roundType: string;
+  roundComplete: boolean;
+  evaluationInstanceId: string;
   interviewStatus: string;
   assignedAt: string;
 }
@@ -115,16 +101,12 @@ export interface CreateInterviewRoundDTO {
   round_type: string;
   sequence: number;
   interviewer_ids: string[];
+  evaluation_template_id: string;
 }
 
 export interface CreateInterviewDTO {
   pipeline_stage_id: string;
   rounds: CreateInterviewRoundDTO[];
-}
-
-export interface SubmitFeedbackDTO {
-  decision: 'PASS' | 'FAIL' | 'NEUTRAL';
-  notes?: string;
 }
 
 export interface UpdateInterviewDTO {

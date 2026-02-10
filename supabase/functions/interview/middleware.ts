@@ -61,7 +61,3 @@ export function canViewInterviews(role: string): boolean {
   return ['SUPERADMIN', 'ADMIN', 'HR', 'INTERVIEWER'].includes(role);
 }
 
-// Check if user can submit feedback
-export function canSubmitFeedback(role: string): boolean {
-  return ['SUPERADMIN', 'ADMIN', 'HR', 'INTERVIEWER'].includes(role);
-}

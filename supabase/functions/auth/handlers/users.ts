@@ -82,6 +82,100 @@ export async function createTenantUser(ctx: HandlerContext, req: Request): Promi
   }, 201);
 }
 
+// PATCH /users/:id - Update tenant user (role, active status)
+export async function updateTenantUser(ctx: HandlerContext, req: Request): Promise<Response> {
+  const { profile } = await requirePermission(ctx.supabaseUser, ctx.supabaseAdmin, 'member:*');
+  const userId = ctx.pathParts[1];
+  const { role, is_active } = await req.json();
+
+  // Verify target user belongs to same tenant
+  const { data: targetUser, error: fetchError } = await ctx.supabaseAdmin
+    .from('user_profiles')
+    .select('*')
+    .eq('id', userId)
+    .eq('tenant_id', profile.tenant_id)
+    .is('deleted_at', null)
+    .single();
+  if (fetchError || !targetUser) throw new Error('User not found');
+
+  const updateData: Record<string, unknown> = {};
+
+  if (role !== undefined) {
+    const upperRole = role.toUpperCase();
+    if (!['ADMIN', 'HR', 'INTERVIEWER', 'CANDIDATE'].includes(upperRole)) {
+      throw new Error('Invalid role. Must be: admin, hr, interviewer, or candidate');
+    }
+    updateData.role = upperRole;
+
+    // Sync role to auth user_metadata so JWT stays consistent
+    await ctx.supabaseAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: { role: upperRole },
+    });
+  }
+
+  if (is_active !== undefined) {
+    updateData.is_active = is_active;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    throw new Error('No fields to update. Provide role or is_active.');
+  }
+
+  updateData.updated_at = new Date().toISOString();
+
+  const { data: updated, error: updateError } = await ctx.supabaseAdmin
+    .from('user_profiles')
+    .update(updateData)
+    .eq('id', userId)
+    .eq('tenant_id', profile.tenant_id)
+    .select()
+    .single();
+  if (updateError) throw updateError;
+
+  return jsonResponse({
+    user: { ...updated, permissions: getPermissions(updated.role) },
+  });
+}
+
+// POST /users/:id/reset-password - Reset tenant user password
+export async function resetTenantUserPassword(ctx: HandlerContext, req: Request): Promise<Response> {
+  const { profile } = await requirePermission(ctx.supabaseUser, ctx.supabaseAdmin, 'member:*');
+  const userId = ctx.pathParts[1];
+  const { new_password, force_change } = await req.json();
+
+  if (force_change === undefined) {
+    throw new Error('force_change is required');
+  }
+
+  // Verify target user belongs to same tenant
+  const { data: targetUser, error: fetchError } = await ctx.supabaseAdmin
+    .from('user_profiles')
+    .select('tenant_id')
+    .eq('id', userId)
+    .eq('tenant_id', profile.tenant_id)
+    .is('deleted_at', null)
+    .single();
+  if (fetchError || !targetUser) throw new Error('User not found');
+
+  const password = new_password || generateTempPassword();
+
+  const { error } = await ctx.supabaseAdmin.auth.admin.updateUserById(userId, { password });
+  if (error) throw error;
+
+  // Update force_password_reset flag
+  await ctx.supabaseAdmin
+    .from('user_profiles')
+    .update({ force_password_reset: force_change, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+
+  return jsonResponse({
+    user_id: userId,
+    temporary_password: password,
+    force_password_reset: force_change,
+    message: 'Password has been reset successfully',
+  });
+}
+
 // PUT /tenant/settings - Update tenant settings
 export async function updateTenantSettings(ctx: HandlerContext, req: Request): Promise<Response> {
   const { profile } = await requirePermission(ctx.supabaseUser, ctx.supabaseAdmin, 'settings:*');
