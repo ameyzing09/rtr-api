@@ -1,4 +1,4 @@
-import type { HandlerContext, JobRecord } from '../types.ts';
+import type { CascadeInfoResponse, HandlerContext, JobRecord } from '../types.ts';
 import { formatJobResponse, toSnakeCase, camelToSnake } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
 import { canPublishJobs } from '../middleware.ts';
@@ -226,6 +226,37 @@ export async function deleteJob(ctx: HandlerContext): Promise<Response> {
 
   // Return empty response to match NestJS behavior (void return)
   return new Response(null, { status: 204 });
+}
+
+// GET /job/:id/cascade-info - Get cascade deletion info
+export async function getCascadeInfo(ctx: HandlerContext): Promise<Response> {
+  const jobId = ctx.pathParts[1];
+
+  // Verify job exists and belongs to tenant
+  const { data: job, error: jobError } = await ctx.supabaseUser
+    .from('jobs')
+    .select('id')
+    .eq('id', jobId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (jobError || !job) {
+    throw new Error(`Job with ID ${jobId} not found for tenant ${ctx.tenantId}`);
+  }
+
+  // Count total applications for this job
+  const { count: applicationCount } = await ctx.supabaseUser
+    .from('applications')
+    .select('id', { count: 'exact', head: true })
+    .eq('job_id', jobId)
+    .eq('tenant_id', ctx.tenantId);
+
+  const result: CascadeInfoResponse = {
+    jobId,
+    applicationCount: applicationCount || 0,
+  };
+
+  return jsonResponse({ data: result });
 }
 
 // PUT /job/:id/publish - Publish job (ADMIN/HR only)

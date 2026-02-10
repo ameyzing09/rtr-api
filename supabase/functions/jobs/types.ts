@@ -68,6 +68,11 @@ export interface ApplicationResponse {
   updatedAt: string;
 }
 
+export interface CascadeInfoResponse {
+  jobId: string;
+  applicationCount: number;
+}
+
 // Public API response types (snake_case - matches NestJS public endpoints)
 export interface PublicJobDto {
   id: string;
@@ -98,7 +103,16 @@ export interface PublicJobsResponse {
 
 export interface PublicApplicationResponse {
   id: string;
-  status: 'PENDING' | 'REVIEWED' | 'REJECTED' | 'HIRED';
+  status: string;
+  candidate_access_token: string;
+}
+
+export interface PublicApplicationStatusResponse {
+  jobTitle: string;
+  status: string;
+  stageName: string;
+  appliedAt: string;
+  lastUpdatedAt: string;
 }
 
 // Handler context

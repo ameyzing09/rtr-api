@@ -1,49 +1,6 @@
 import type { HandlerContext, ApplicationRecord } from '../types.ts';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatApplicationResponse, toSnakeCase } from '../utils.ts';
+import { formatApplicationResponse, toSnakeCase, attachToTrackingService } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
-
-// Helper: Attach application to tracking service
-// Returns true if successful, false if failed
-async function attachToTrackingService(
-  applicationId: string,
-  tenantId: string,
-  supabaseAdmin: SupabaseClient
-): Promise<boolean> {
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY')
-      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Missing SUPABASE_URL or service role key');
-      return false;
-    }
-
-    const trackingUrl = `${supabaseUrl}/functions/v1/tracking/applications/${applicationId}/attach`;
-
-    const response = await fetch(trackingUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'apikey': serviceRoleKey,
-      },
-      body: JSON.stringify({ tenant_id: tenantId }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Tracking attach failed: ${response.status} - ${errorText}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error calling tracking service:', error);
-    return false;
-  }
-}
 
 // GET /applications - List all tenant applications
 export async function listApplications(ctx: HandlerContext, req: Request): Promise<Response> {
@@ -114,8 +71,7 @@ export async function createApplication(ctx: HandlerContext, req: Request): Prom
   // Attach to tracking service (mandatory - no floating applications)
   const trackingAttached = await attachToTrackingService(
     data.id,
-    ctx.tenantId,
-    ctx.supabaseAdmin
+    ctx.tenantId
   );
 
   if (!trackingAttached) {

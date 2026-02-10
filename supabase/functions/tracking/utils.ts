@@ -162,6 +162,10 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('Feedback required')) {
     status = 400;
     code = 'feedback_required';
+  } else if (message.includes('Signals not met')) {
+    status = 400;
+    code = 'signals_not_met';
+    details = 'One or more signal conditions are not satisfied';
   }
 
   const errorResponse: ErrorResponse = {

@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
     // Routes: /applications/:id/...
 
     if (pathParts[0] === 'applications' && pathParts[1]) {
-      const applicationId = pathParts[1];
+      const _applicationId = pathParts[1]; // Used via ctx.pathParts in handlers
       const action = pathParts[2];
 
       // POST /applications/:id/act - Execute action (Action Engine)

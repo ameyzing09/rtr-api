@@ -1,5 +1,5 @@
 {
-    "scripts": {
+  "scripts": {
     "deploy": "supabase functions deploy --no-verify-jwt"
   },
   "devDependencies": {
