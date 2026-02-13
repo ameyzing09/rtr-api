@@ -57,10 +57,6 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('already') || message.includes('duplicate') || message.includes('conflict')) {
     status = 409;
     code = 'conflict';
-  } else if (message.includes('EVALUATION_INCOMPLETE')) {
-    status = 400;
-    code = 'evaluation_incomplete';
-    details = 'Not all participants have submitted responses';
   } else if (message.includes('NOT_FOUND')) {
     status = 404;
     code = 'not_found';
@@ -73,6 +69,13 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('VALIDATION')) {
     status = 400;
     code = 'validation_error';
+  } else if (message.includes('CANCELLED')) {
+    status = 400;
+    code = 'invalid_action';
+    details = 'Interview has been cancelled';
+  } else if (message.includes('TEMPLATE_NOT_ALLOWED_FOR_STAGE')) {
+    status = 422;
+    code = 'template_not_allowed_for_stage';
   }
 
   const errorResponse: ErrorResponse = {

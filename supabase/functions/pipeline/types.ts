@@ -72,9 +72,9 @@ export interface UpdatePipelineDTO {
 }
 
 export interface PipelineAssignmentDTO {
-  pipeline_id?: string;  // Optional - uses default if not provided
+  pipeline_id?: string; // Optional - uses default if not provided
   job_id: string;
-  tenant_id?: string;    // For internal service calls
+  tenant_id?: string; // For internal service calls
 }
 
 // Handler Context
@@ -87,5 +87,5 @@ export interface HandlerContext {
   pathParts: string[];
   method: string;
   url: URL;
-  isServiceRole?: boolean;  // True when called internally with service role key
+  isServiceRole?: boolean; // True when called internally with service role key
 }

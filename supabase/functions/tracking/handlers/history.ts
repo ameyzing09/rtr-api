@@ -1,10 +1,10 @@
 import type {
-  HandlerContext,
   ApplicationStageHistoryRecord,
+  HandlerContext,
   PipelineStageRecord,
   StageHistoryResponse,
 } from '../types.ts';
-import { jsonResponse, formatHistoryResponse, isValidUUID } from '../utils.ts';
+import { formatHistoryResponse, isValidUUID, jsonResponse } from '../utils.ts';
 
 // GET /applications/:id/history - Get stage transition history
 export async function getHistory(ctx: HandlerContext): Promise<Response> {

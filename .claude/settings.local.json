@@ -6,6 +6,11 @@
       "Bash(ls:*)",
       "mcp__supabase__get_logs",
       "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "mcp__supabase__get_project_url",
+      "mcp__supabase__list_edge_functions",
+      "mcp__supabase__list_tables",
       "Bash(wc:*)",
       "Bash(grep:*)",
       "Bash(for file in \"C:\\\\Projects\\\\rtr-api\\\\supabase\\\\migrations\"/*.sql)",
@@ -14,7 +19,14 @@
       "Bash(then)",
       "Bash(echo:*)",
       "Bash(fi)",
-      "Bash(done)"
+      "Bash(done)",
+      "mcp__supabase__list_migrations",
+      "Bash(dir:*)",
+      "mcp__supabase__execute_sql",
+      "Bash(deno --version:*)",
+      "Bash(deno lint:*)",
+      "Bash(deno check:*)",
+      "Bash(deno task:*)"
     ],
     "deny": [],
     "ask": []

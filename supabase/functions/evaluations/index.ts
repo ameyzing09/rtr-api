@@ -1,6 +1,12 @@
 import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
-import { corsResponse, handleError, jsonResponse, textResponse } from './utils.ts';
-import { getTenantIdFromAuth, getUserFromToken, canViewEvaluations, canManageEvaluations, canManageSettings } from './middleware.ts';
+import { corsResponse, handleError, isValidUUID, jsonResponse, textResponse } from './utils.ts';
+import {
+  canManageEvaluations,
+  canManageSettings,
+  canViewEvaluations,
+  getTenantIdFromAuth,
+  getUserFromToken,
+} from './middleware.ts';
 import type { HandlerContext } from './types.ts';
 
 // Import handlers
@@ -217,11 +223,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ==================== EVALUATION DETAIL ====================
+    // GET /evaluations/:id - Get evaluation detail (must be before sub-resource routes)
+    if (method === 'GET' && isValidUUID(pathParts[0]) && !pathParts[1]) {
+      return await instanceHandlers.getEvaluationDetail(ctx);
+    }
+
     // ==================== EVALUATION INSTANCE ROUTES ====================
     // Routes: /evaluations/:id/...
-    if (pathParts[0] === 'evaluations' && pathParts[1]) {
-      const _evaluationId = pathParts[1]; // Used via ctx.pathParts in handlers
-      const evalAction = pathParts[2];
+    if (isValidUUID(pathParts[0]) && pathParts[1]) {
+      const _evaluationId = pathParts[0]; // Used via ctx.pathParts in handlers
+      const evalAction = pathParts[1];
 
       // POST /evaluations/:id/cancel - Cancel evaluation
       if (method === 'POST' && evalAction === 'cancel') {
@@ -253,7 +265,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // DELETE /evaluations/:id/participants/:participantId - Remove participant
-      if (method === 'DELETE' && evalAction === 'participants' && pathParts[3]) {
+      if (method === 'DELETE' && evalAction === 'participants' && pathParts[2]) {
         if (!canManageEvaluations(user.role)) {
           throw new Error('Forbidden: HR role required');
         }
@@ -280,7 +292,6 @@ Deno.serve(async (req: Request) => {
       message: 'Endpoint not found',
       status_code: 404,
     }, 404);
-
   } catch (error) {
     return handleError(error);
   }

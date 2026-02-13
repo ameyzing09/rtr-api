@@ -1,15 +1,12 @@
 import type {
-  HandlerContext,
   AttachToPipelineDTO,
+  HandlerContext,
   MoveStageDTO,
-  UpdateStatusDTO,
   PipelineStageRecord,
   TrackingStateResponse,
+  UpdateStatusDTO,
 } from '../types.ts';
-import {
-  jsonResponse,
-  isValidUUID,
-} from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Type for RPC return (matches tracking_state_result composite type)
@@ -28,7 +25,7 @@ interface TrackingRpcResult {
 // Format RPC result to API response
 function formatRpcResult(
   result: TrackingRpcResult,
-  stage: PipelineStageRecord
+  stage: PipelineStageRecord,
 ): TrackingStateResponse {
   return {
     id: result.id,
@@ -153,7 +150,7 @@ export async function attachToPipeline(ctx: HandlerContext, req: Request): Promi
 
   return jsonResponse(
     formatRpcResult(result as TrackingRpcResult, firstStage as PipelineStageRecord),
-    201
+    201,
   );
 }
 

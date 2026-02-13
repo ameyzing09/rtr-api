@@ -1,5 +1,5 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import type { UserProfile, AuthContext } from './types.ts';
+import type { AuthContext, UserProfile } from './types.ts';
 import { getPermissions, hasPermission } from './permissions.ts';
 
 // Get authenticated user from JWT
@@ -12,7 +12,7 @@ export async function getUser(supabaseUser: SupabaseClient): Promise<User> {
 // Get user profile with role from database
 export async function getUserProfile(
   supabaseAdmin: SupabaseClient,
-  userId: string
+  userId: string,
 ): Promise<UserProfile> {
   const { data, error } = await supabaseAdmin
     .from('user_profiles')
@@ -26,7 +26,7 @@ export async function getUserProfile(
 // Require authentication (any logged-in user)
 export async function requireAuth(
   supabaseUser: SupabaseClient,
-  supabaseAdmin: SupabaseClient
+  supabaseAdmin: SupabaseClient,
 ): Promise<AuthContext> {
   const user = await getUser(supabaseUser);
   const profile = await getUserProfile(supabaseAdmin, user.id);
@@ -38,7 +38,7 @@ export async function requireAuth(
 export async function requirePermission(
   supabaseUser: SupabaseClient,
   supabaseAdmin: SupabaseClient,
-  permission: string
+  permission: string,
 ): Promise<AuthContext> {
   const ctx = await requireAuth(supabaseUser, supabaseAdmin);
   if (!hasPermission(ctx.permissions, permission)) {
@@ -50,7 +50,7 @@ export async function requirePermission(
 // Require SUPERADMIN role
 export async function requireSuperadmin(
   supabaseUser: SupabaseClient,
-  supabaseAdmin: SupabaseClient
+  supabaseAdmin: SupabaseClient,
 ): Promise<AuthContext> {
   const ctx = await requireAuth(supabaseUser, supabaseAdmin);
   if (ctx.profile.role !== 'SUPERADMIN') {

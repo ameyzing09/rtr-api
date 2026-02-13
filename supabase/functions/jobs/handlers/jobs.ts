@@ -1,10 +1,10 @@
 import type { CascadeInfoResponse, HandlerContext, JobRecord } from '../types.ts';
-import { formatJobResponse, toSnakeCase, camelToSnake } from '../utils.ts';
+import { camelToSnake, formatJobResponse, toSnakeCase } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
 import { canPublishJobs } from '../middleware.ts';
 
 // GET /job - List all tenant jobs
-export async function listJobs(ctx: HandlerContext, req: Request): Promise<Response> {
+export async function listJobs(ctx: HandlerContext, _req: Request): Promise<Response> {
   const params = Object.fromEntries(ctx.url.searchParams);
 
   // Build query
@@ -36,7 +36,7 @@ export async function listJobs(ctx: HandlerContext, req: Request): Promise<Respo
   const offset = (page - 1) * limit;
   query = query.range(offset, offset + limit - 1);
 
-  const { data, error, count } = await query;
+  const { data, error, count: _count } = await query;
   if (error) throw new Error(error.message);
 
   // Return array of jobs (matches NestJS response format)
@@ -80,7 +80,7 @@ export async function createJob(ctx: HandlerContext, req: Request): Promise<Resp
     const pipelineResponse = await assignPipelineToJob(
       jobId,
       ctx.tenantId,
-      pipelineId
+      pipelineId,
     );
 
     if (!pipelineResponse.ok) {
@@ -101,7 +101,6 @@ export async function createJob(ctx: HandlerContext, req: Request): Promise<Resp
     if (updateError) throw new Error(updateError.message);
 
     return jsonResponse(formatJobResponse(updatedJob as JobRecord), 201);
-
   } catch (error) {
     // 4. Rollback: Delete the DRAFT job on any failure
     await ctx.supabaseAdmin
@@ -117,11 +116,11 @@ export async function createJob(ctx: HandlerContext, req: Request): Promise<Resp
 async function assignPipelineToJob(
   jobId: string,
   tenantId: string,
-  pipelineId?: string
+  pipelineId?: string,
 ): Promise<Response> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
+    Deno.env.get('SUPABASE_SECRET_KEY') || '';
 
   const pipelineUrl = `${supabaseUrl}/functions/v1/pipeline/pipeline/assign`;
 

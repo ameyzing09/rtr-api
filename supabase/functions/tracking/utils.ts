@@ -1,13 +1,13 @@
 import type {
   ApplicationPipelineStateRecord,
   ApplicationStageHistoryRecord,
-  PipelineStageRecord,
-  TrackingStateResponse,
-  StageHistoryResponse,
-  PipelineStageResponse,
   ErrorResponse,
+  PipelineStageRecord,
+  PipelineStageResponse,
+  StageHistoryResponse,
   TenantStatusRecord,
   TenantStatusResponse,
+  TrackingStateResponse,
 } from './types.ts';
 
 // CORS headers
@@ -41,7 +41,7 @@ export function textResponse(text: string, status = 200): Response {
 // Format tracking state for API response
 export function formatTrackingStateResponse(
   state: ApplicationPipelineStateRecord,
-  stage: PipelineStageRecord
+  stage: PipelineStageRecord,
 ): TrackingStateResponse {
   return {
     id: state.id,
@@ -64,7 +64,7 @@ export function formatTrackingStateResponse(
 export function formatHistoryResponse(
   history: ApplicationStageHistoryRecord,
   fromStage: PipelineStageRecord | null,
-  toStage: PipelineStageRecord | null
+  toStage: PipelineStageRecord | null,
 ): StageHistoryResponse {
   return {
     id: history.id,
@@ -149,7 +149,9 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('Unauthorized') || message.includes('Invalid or missing token')) {
     status = 401;
     code = 'unauthorized';
-  } else if (message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')) {
+  } else if (
+    message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')
+  ) {
     status = 403;
     code = 'forbidden';
   } else if (message.includes('already attached') || message.includes('duplicate') || message.includes('conflict')) {
@@ -159,6 +161,10 @@ export function handleError(error: unknown): Response {
     status = 403;
     code = 'forbidden';
     details = 'Application is in a terminal state';
+  } else if (message.includes('Evaluations incomplete')) {
+    status = 400;
+    code = 'evaluations_incomplete';
+    details = 'Required evaluations must be completed before this action';
   } else if (message.includes('Feedback required')) {
     status = 400;
     code = 'feedback_required';

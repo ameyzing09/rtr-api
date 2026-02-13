@@ -1,10 +1,10 @@
 import type {
-  HandlerContext,
   EvaluationResponseRecord,
   EvaluationResponseResponse,
+  HandlerContext,
   SubmitResponseDTO,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -46,9 +46,9 @@ function handleRpcError(error: { code?: string; message?: string }): never {
 // POST /evaluations/:id/respond
 export async function submitResponse(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
-  const evaluationId = ctx.pathParts[1];
+  const evaluationId = ctx.pathParts[0];
 
   if (!isValidUUID(evaluationId)) {
     throw new Error('Invalid evaluation ID format');
@@ -77,7 +77,7 @@ export async function submitResponse(
 
 // GET /evaluations/:id/responses (HR only)
 export async function listResponses(ctx: HandlerContext): Promise<Response> {
-  const evaluationId = ctx.pathParts[1];
+  const evaluationId = ctx.pathParts[0];
 
   if (!isValidUUID(evaluationId)) {
     throw new Error('Invalid evaluation ID format');

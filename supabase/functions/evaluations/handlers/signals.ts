@@ -1,10 +1,10 @@
 import type {
-  HandlerContext,
   ApplicationSignalRecord,
   ApplicationSignalResponse,
+  HandlerContext,
   SetManualSignalDTO,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -119,9 +119,7 @@ export async function getApplicationSignals(ctx: HandlerContext): Promise<Respon
     throw new Error(`Failed to fetch signals: ${error.message}`);
   }
 
-  const formatted = (data || []).map((s: ApplicationSignalRecord) =>
-    formatSignalResponse(s)
-  );
+  const formatted = (data || []).map((s: ApplicationSignalRecord) => formatSignalResponse(s));
 
   return jsonResponse({ data: formatted });
 }
@@ -129,7 +127,7 @@ export async function getApplicationSignals(ctx: HandlerContext): Promise<Respon
 // POST /applications/:id/signals (ADMIN only)
 export async function setManualSignal(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 

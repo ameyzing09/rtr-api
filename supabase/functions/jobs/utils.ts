@@ -1,10 +1,10 @@
 import type {
-  JobRecord,
   ApplicationRecord,
-  JobResponse,
   ApplicationResponse,
-  PublicJobDto,
+  JobRecord,
+  JobResponse,
   PublicJobDetailDto,
+  PublicJobDto,
 } from './types.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -81,14 +81,14 @@ function createDescriptionExcerpt(description: string | null): string {
 
 // Convert single camelCase string to snake_case (for sortBy params)
 export function camelToSnake(str: string): string {
-  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
 // Convert camelCase request body to snake_case for DB
 export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     result[snakeKey] = value;
   }
   return result;
@@ -98,12 +98,12 @@ export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknow
 // Returns true if successful, false if failed
 export async function attachToTrackingService(
   applicationId: string,
-  tenantId: string
+  tenantId: string,
 ): Promise<boolean> {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY')
-      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SECRET_KEY') ||
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
       console.error('Missing SUPABASE_URL or service role key');

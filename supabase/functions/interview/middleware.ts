@@ -51,12 +51,12 @@ export async function getUserFromToken(
   };
 }
 
-// Check if user can manage pipelines (ADMIN, HR)
-export function canManagePipelines(role: string): boolean {
+// Check if user can manage interviews (create, update status)
+export function canManageInterviews(role: string): boolean {
   return ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
 }
 
-// Check if user can view pipelines (ADMIN, HR, INTERVIEWER)
-export function canViewPipelines(role: string): boolean {
+// Check if user can view interviews
+export function canViewInterviews(role: string): boolean {
   return ['SUPERADMIN', 'ADMIN', 'HR', 'INTERVIEWER'].includes(role);
 }

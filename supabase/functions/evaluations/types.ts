@@ -27,6 +27,7 @@ export interface SignalDefinition {
   min?: number;
   max?: number;
   aggregation?: 'MAJORITY' | 'UNANIMOUS' | 'ANY' | 'AVERAGE' | null;
+  required?: boolean;
 }
 
 // ============================================
@@ -245,6 +246,29 @@ export interface ActionExecutionLogResponse {
   toStageName?: string | null;
 }
 
+export interface EvaluationDetailSignal {
+  id: string; // format: ${templateId}:${key}
+  key: string;
+  label: string;
+  type: string; // "numeric" | "boolean" | "text"
+  required: boolean;
+  scale?: { min: number | null; max: number | null };
+}
+
+export interface EvaluationDetailParticipant {
+  userId: string;
+  userName?: string;
+  status: 'PENDING' | 'SUBMITTED' | 'DECLINED';
+}
+
+export interface EvaluationDetailResponse {
+  id: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  template: { id: string; name: string };
+  signals: EvaluationDetailSignal[];
+  participants: EvaluationDetailParticipant[];
+}
+
 // ============================================
 // Request DTOs
 // ============================================
@@ -270,7 +294,7 @@ export interface CreateEvaluationInstanceDTO {
   template_id: string;
   stage_id?: string;
   scheduled_at?: string;
-  participant_ids?: string[];  // Optional initial participants
+  participant_ids?: string[]; // Optional initial participants
 }
 
 export interface AddParticipantDTO {
