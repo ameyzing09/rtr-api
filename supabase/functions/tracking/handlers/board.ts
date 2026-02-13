@@ -1,12 +1,12 @@
 import type {
-  HandlerContext,
-  PipelineStageRecord,
   ApplicationRecord,
-  PipelineBoardResponse,
-  BoardStageResponse,
   BoardApplicationResponse,
+  BoardStageResponse,
+  HandlerContext,
+  PipelineBoardResponse,
+  PipelineStageRecord,
 } from '../types.ts';
-import { jsonResponse, formatStageResponse, isValidUUID } from '../utils.ts';
+import { formatStageResponse, isValidUUID, jsonResponse } from '../utils.ts';
 
 // GET /pipelines/:id/board - Get kanban board view for a pipeline
 export async function getPipelineBoard(ctx: HandlerContext): Promise<Response> {
@@ -19,7 +19,7 @@ export async function getPipelineBoard(ctx: HandlerContext): Promise<Response> {
   // Get query params
   const params = Object.fromEntries(ctx.url.searchParams);
   const statusFilter = params.status; // Optional: filter by status
-  const jobIdFilter = params.jobId;   // Optional: filter by job
+  const jobIdFilter = params.jobId; // Optional: filter by job
 
   // 1. Verify pipeline exists and get details
   const { data: pipeline, error: pipelineError } = await ctx.supabaseAdmin

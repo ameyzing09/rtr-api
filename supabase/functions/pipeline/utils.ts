@@ -1,4 +1,4 @@
-import type { PipelineRecord, PipelineResponse, ErrorResponse, Stage } from './types.ts';
+import type { ErrorResponse, PipelineRecord, PipelineResponse, Stage } from './types.ts';
 
 // CORS headers
 export const corsHeaders = {
@@ -49,7 +49,7 @@ export function formatPipelineResponse(pipeline: PipelineRecord): PipelineRespon
 export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     result[snakeKey] = value;
   }
   return result;
@@ -72,7 +72,7 @@ export function validateStages(stages: unknown): stages is Stage[] {
       s.type.length <= 50 &&
       typeof s.conducted_by === 'string' &&
       s.conducted_by.length >= 1 &&
-      s.conducted_by.length <= 50
+      s.conducted_by.length <= 50,
   );
 }
 
@@ -102,10 +102,14 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('Unauthorized') || message.includes('Invalid or missing token')) {
     status = 401;
     code = 'unauthorized';
-  } else if (message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')) {
+  } else if (
+    message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')
+  ) {
     status = 403;
     code = 'forbidden';
-  } else if (message.includes('already exists') || message.includes('duplicate') || message.includes('unique constraint')) {
+  } else if (
+    message.includes('already exists') || message.includes('duplicate') || message.includes('unique constraint')
+  ) {
     status = 409;
     code = 'conflict';
     details = 'A pipeline with this name already exists for this tenant';

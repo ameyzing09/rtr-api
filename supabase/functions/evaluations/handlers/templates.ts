@@ -1,11 +1,11 @@
 import type {
-  HandlerContext,
+  CreateEvaluationTemplateDTO,
   EvaluationTemplateRecord,
   EvaluationTemplateResponse,
-  CreateEvaluationTemplateDTO,
+  HandlerContext,
   UpdateEvaluationTemplateDTO,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -51,9 +51,7 @@ export async function listEvaluationTemplates(ctx: HandlerContext): Promise<Resp
     throw new Error(`Failed to fetch templates: ${error.message}`);
   }
 
-  const formatted = (data || []).map((t: EvaluationTemplateRecord) =>
-    formatTemplateResponse(t)
-  );
+  const formatted = (data || []).map((t: EvaluationTemplateRecord) => formatTemplateResponse(t));
 
   return jsonResponse({ data: formatted });
 }
@@ -61,7 +59,7 @@ export async function listEvaluationTemplates(ctx: HandlerContext): Promise<Resp
 // POST /settings/evaluation-templates
 export async function createEvaluationTemplate(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const body: CreateEvaluationTemplateDTO = await req.json();
 
@@ -106,14 +104,14 @@ export async function createEvaluationTemplate(
 
   return jsonResponse(
     { data: formatTemplateResponse(data as EvaluationTemplateRecord) },
-    201
+    201,
   );
 }
 
 // PATCH /settings/evaluation-templates/:id
 export async function updateEvaluationTemplate(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const templateId = ctx.pathParts[2];
 

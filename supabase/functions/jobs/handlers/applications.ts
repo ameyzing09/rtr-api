@@ -1,9 +1,9 @@
-import type { HandlerContext, ApplicationRecord } from '../types.ts';
-import { formatApplicationResponse, toSnakeCase, attachToTrackingService } from '../utils.ts';
+import type { ApplicationRecord, HandlerContext } from '../types.ts';
+import { attachToTrackingService, formatApplicationResponse, toSnakeCase } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
 
 // GET /applications - List all tenant applications
-export async function listApplications(ctx: HandlerContext, req: Request): Promise<Response> {
+export async function listApplications(ctx: HandlerContext, _req: Request): Promise<Response> {
   const params = Object.fromEntries(ctx.url.searchParams);
 
   // Build query
@@ -71,7 +71,7 @@ export async function createApplication(ctx: HandlerContext, req: Request): Prom
   // Attach to tracking service (mandatory - no floating applications)
   const trackingAttached = await attachToTrackingService(
     data.id,
-    ctx.tenantId
+    ctx.tenantId,
   );
 
   if (!trackingAttached) {

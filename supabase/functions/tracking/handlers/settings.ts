@@ -1,14 +1,5 @@
-import type {
-  HandlerContext,
-  TenantStatusRecord,
-  CreateStatusDTO,
-  UpdateTenantStatusDTO,
-} from '../types.ts';
-import {
-  jsonResponse,
-  formatStatusResponse,
-  isValidUUID,
-} from '../utils.ts';
+import type { CreateStatusDTO, HandlerContext, TenantStatusRecord, UpdateTenantStatusDTO } from '../types.ts';
+import { formatStatusResponse, isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // GET /settings/statuses - List all statuses for tenant
@@ -56,15 +47,11 @@ export async function createStatus(ctx: HandlerContext, req: Request): Promise<R
   }
 
   // Generate action_code if not provided
-  const actionCode = body.action_code
-    ? body.action_code.toUpperCase().trim().replace(/\s+/g, '_')
-    : statusCode;
+  const actionCode = body.action_code ? body.action_code.toUpperCase().trim().replace(/\s+/g, '_') : statusCode;
 
   // Validate outcome_type if provided
   const validOutcomeTypes = ['ACTIVE', 'HOLD', 'SUCCESS', 'FAILURE', 'NEUTRAL'];
-  const outcomeType = body.outcome_type
-    ? body.outcome_type.toUpperCase().trim()
-    : 'NEUTRAL';
+  const outcomeType = body.outcome_type ? body.outcome_type.toUpperCase().trim() : 'NEUTRAL';
 
   if (!validOutcomeTypes.includes(outcomeType)) {
     throw new Error(`outcome_type must be one of: ${validOutcomeTypes.join(', ')}`);
@@ -94,7 +81,7 @@ export async function createStatus(ctx: HandlerContext, req: Request): Promise<R
 
   return jsonResponse(
     { data: formatStatusResponse(data as TenantStatusRecord) },
-    201
+    201,
   );
 }
 
@@ -147,7 +134,7 @@ export async function updateStatus(ctx: HandlerContext, req: Request): Promise<R
       if ((count ?? 0) > 0 && !body.is_terminal) {
         throw new Error(
           `Cannot make status non-terminal - ${count} applications are using this status. ` +
-          `Making it non-terminal would allow status changes from applications that should be final.`
+            `Making it non-terminal would allow status changes from applications that should be final.`,
         );
       }
     }
@@ -218,7 +205,7 @@ export async function deleteStatus(ctx: HandlerContext): Promise<Response> {
   if ((count ?? 0) > 0) {
     throw new Error(
       `Cannot delete status "${status.status_code}" - it is currently used by ${count} application(s). ` +
-      `Move applications to a different status first.`
+        `Move applications to a different status first.`,
     );
   }
 

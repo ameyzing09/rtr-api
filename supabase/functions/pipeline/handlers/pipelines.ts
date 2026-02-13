@@ -1,5 +1,18 @@
-import type { HandlerContext, PipelineRecord, CreatePipelineDTO, UpdatePipelineDTO, PipelineAssignmentDTO } from '../types.ts';
-import { formatPipelineResponse, jsonResponse, textResponse, validateStages, validateName, validateDescription } from '../utils.ts';
+import type {
+  CreatePipelineDTO,
+  HandlerContext,
+  PipelineAssignmentDTO,
+  PipelineRecord,
+  UpdatePipelineDTO,
+} from '../types.ts';
+import {
+  formatPipelineResponse,
+  jsonResponse,
+  textResponse,
+  validateDescription,
+  validateName,
+  validateStages,
+} from '../utils.ts';
 import { canManagePipelines } from '../middleware.ts';
 
 // GET / - Health check
@@ -73,7 +86,7 @@ export async function getPipeline(ctx: HandlerContext): Promise<Response> {
     .from('pipelines')
     .select('*')
     .eq('id', pipelineId)
-    .eq('tenant_id', ctx.tenantId)
+    .or(`tenant_id.eq.${ctx.tenantId},tenant_id.is.null`)
     .eq('is_deleted', false)
     .single();
 
@@ -92,6 +105,18 @@ export async function updatePipeline(ctx: HandlerContext, req: Request): Promise
   }
 
   const pipelineId = ctx.pathParts[1];
+
+  // Check if trying to update the default pipeline
+  const { data: existing } = await ctx.supabaseAdmin
+    .from('pipelines')
+    .select('is_default')
+    .eq('id', pipelineId)
+    .single();
+
+  if (existing?.is_default) {
+    throw new Error('Cannot modify the default pipeline. Create a custom pipeline instead.');
+  }
+
   const body: UpdatePipelineDTO = await req.json();
 
   // Validate optional fields if provided

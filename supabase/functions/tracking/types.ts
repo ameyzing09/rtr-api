@@ -23,8 +23,8 @@ export interface ApplicationPipelineStateRecord {
   job_id: string;
   pipeline_id: string;
   current_stage_id: string;
-  status: string;  // Denormalized presentation label, derived from outcome_type
-  outcome_type: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
+  status: string; // Denormalized presentation label, derived from outcome_type
+  outcome_type: string; // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal: boolean;
   entered_stage_at: string;
   created_at: string;
@@ -38,7 +38,7 @@ export interface ApplicationStageHistoryRecord {
   pipeline_id: string;
   from_stage_id: string | null;
   to_stage_id: string | null;
-  action: string;  // Now tenant-configurable via action_code
+  action: string; // Now tenant-configurable via action_code
   changed_by: string | null;
   changed_at: string;
   reason: string | null;
@@ -124,8 +124,8 @@ export interface PipelineBoardResponse {
 // ============================================
 
 export interface AttachToPipelineDTO {
-  pipeline_id?: string;  // Optional - uses job's assigned pipeline
-  tenant_id?: string;    // For service role calls only
+  pipeline_id?: string; // Optional - uses job's assigned pipeline
+  tenant_id?: string; // For service role calls only
 }
 
 export interface MoveStageDTO {
@@ -134,7 +134,7 @@ export interface MoveStageDTO {
 }
 
 export interface UpdateStatusDTO {
-  status: string;  // Now tenant-configurable, validated by RPC
+  status: string; // Now tenant-configurable, validated by RPC
   reason?: string;
 }
 
@@ -146,9 +146,9 @@ export interface UpdateStatusDTO {
 export interface ExecuteActionDTO {
   action: string;
   notes?: string;
-  override_reason?: string;   // Required if bypassing rules
-  reviewed_by?: string;       // Required if feedback-gated
-  approved_by?: string;       // Required if forcing past block
+  override_reason?: string; // Required if bypassing rules
+  reviewed_by?: string; // Required if feedback-gated
+  approved_by?: string; // Required if forcing past block
 }
 
 // Signal condition types (used by action engine for signal gate display)
@@ -168,14 +168,20 @@ export interface SignalConditions {
   conditions: SignalCondition[];
 }
 
+export interface EvaluationRequirement {
+  templateId: string;
+  templateName: string;
+  completed: boolean;
+  instanceId: string | null;
+  instanceStatus: string | null;
+}
+
 export interface AvailableActionResponse {
   actionCode: string;
   displayName: string;
   outcomeType: string | null;
   isTerminal: boolean;
-  requiresFeedback: boolean;
   requiresNotes: boolean;
-  feedbackSubmitted: boolean;
   signalConditions?: SignalConditions;
   signalsMet: boolean;
 }
@@ -217,7 +223,7 @@ export interface TenantStatusRecord {
   status_code: string;
   display_name: string;
   action_code: string;
-  outcome_type: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
+  outcome_type: string; // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal: boolean;
   is_active: boolean;
   sort_order: number;
@@ -243,7 +249,7 @@ export interface CreateStatusDTO {
   status_code: string;
   display_name: string;
   action_code?: string;
-  outcome_type?: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
+  outcome_type?: string; // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal?: boolean;
   sort_order?: number;
   color_hex?: string;
@@ -252,7 +258,7 @@ export interface CreateStatusDTO {
 export interface UpdateTenantStatusDTO {
   display_name?: string;
   action_code?: string;
-  outcome_type?: string;  // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
+  outcome_type?: string; // 'ACTIVE' | 'HOLD' | 'SUCCESS' | 'FAILURE' | 'NEUTRAL'
   is_terminal?: boolean;
   sort_order?: number;
   color_hex?: string;

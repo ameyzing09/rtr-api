@@ -1,9 +1,5 @@
-import type {
-  HandlerContext,
-  ActionExecutionLogRecord,
-  ActionExecutionLogResponse,
-} from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import type { ActionExecutionLogRecord, ActionExecutionLogResponse, HandlerContext } from '../types.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -16,7 +12,7 @@ function formatExecutionLogResponse(
   approvedByEmail?: string,
   fromStageName?: string | null,
   toStageName?: string | null,
-  stageName?: string | null
+  stageName?: string | null,
 ): ActionExecutionLogResponse {
   return {
     id: record.id,
@@ -149,7 +145,7 @@ export async function getDecisionLog(ctx: HandlerContext): Promise<Response> {
       record.approved_by ? userEmailMap[record.approved_by] : undefined,
       record.from_stage_id ? stageNameMap[record.from_stage_id] : null,
       record.to_stage_id ? stageNameMap[record.to_stage_id] : null,
-      record.stage_id ? stageNameMap[record.stage_id] : null
+      record.stage_id ? stageNameMap[record.stage_id] : null,
     )
   );
 
@@ -227,7 +223,7 @@ export async function getDecisionLogEntry(ctx: HandlerContext): Promise<Response
       record.approved_by ? userEmailMap[record.approved_by] : undefined,
       record.from_stage_id ? stageNameMap[record.from_stage_id] : null,
       record.to_stage_id ? stageNameMap[record.to_stage_id] : null,
-      record.stage_id ? stageNameMap[record.stage_id] : null
+      record.stage_id ? stageNameMap[record.stage_id] : null,
     ),
   });
 }

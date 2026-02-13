@@ -49,7 +49,9 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('Unauthorized') || message.includes('Invalid or missing token')) {
     status = 401;
     code = 'unauthorized';
-  } else if (message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')) {
+  } else if (
+    message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')
+  ) {
     status = 403;
     code = 'forbidden';
   } else if (message.includes('already') || message.includes('duplicate') || message.includes('conflict')) {
@@ -71,6 +73,9 @@ export function handleError(error: unknown): Response {
     status = 400;
     code = 'invalid_action';
     details = 'Interview has been cancelled';
+  } else if (message.includes('TEMPLATE_NOT_ALLOWED_FOR_STAGE')) {
+    status = 422;
+    code = 'template_not_allowed_for_stage';
   }
 
   const errorResponse: ErrorResponse = {

@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
 import { corsResponse, handleError, jsonResponse } from './utils.ts';
-import { getTenantIdFromAuth, getUserFromToken, canViewPipelines } from './middleware.ts';
+import { canViewPipelines, getTenantIdFromAuth, getUserFromToken } from './middleware.ts';
 import type { HandlerContext } from './types.ts';
 
 // Import handlers
@@ -19,8 +19,8 @@ function parsePath(url: string): string[] {
 // Check if request is using service role key (internal service call)
 function isServiceRoleRequest(req: Request): boolean {
   const apiKey = req.headers.get('apikey') || '';
-  const secretKey = Deno.env.get('SUPABASE_SECRET_KEY')
-    || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const secretKey = Deno.env.get('SUPABASE_SECRET_KEY') ||
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   return apiKey === secretKey && secretKey !== '';
 }
 
@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
         const ctx: HandlerContext = {
           supabaseAdmin,
           supabaseUser,
-          tenantId: '',  // Will be read from body
+          tenantId: '', // Will be read from body
           pathParts,
           method,
           url,

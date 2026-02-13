@@ -16,7 +16,7 @@ export async function listTenantUsers(ctx: HandlerContext): Promise<Response> {
   if (error) throw error;
 
   // Add permissions to each user
-  const users = data.map(u => ({
+  const users = data.map((u) => ({
     ...u,
     permissions: getPermissions(u.role),
   }));

@@ -1,15 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  HandlerContext,
-  InterviewRecord,
-  InterviewRoundRecord,
-  InterviewerAssignmentRecord,
-  InterviewResponse,
-  InterviewRoundResponse,
   CreateInterviewDTO,
+  HandlerContext,
+  InterviewerAssignmentRecord,
+  InterviewRecord,
+  InterviewResponse,
+  InterviewRoundRecord,
+  InterviewRoundResponse,
   UpdateInterviewDTO,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================
 // Formatters
@@ -115,6 +115,30 @@ export async function createInterview(
     }
   }
 
+  // Validate templates are allowed for this pipeline stage via stage_evaluations
+  const { data: stageEvals, error: stageEvalError } = await ctx.supabaseAdmin
+    .from('stage_evaluations')
+    .select('evaluation_template_id')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('stage_id', body.pipeline_stage_id)
+    .eq('is_active', true);
+
+  if (stageEvalError) {
+    throw new Error(`Failed to validate stage evaluations: ${stageEvalError.message}`);
+  }
+
+  const allowedTemplateIds = new Set(
+    (stageEvals || []).map((se: { evaluation_template_id: string }) => se.evaluation_template_id),
+  );
+
+  for (const tid of uniqueTemplateIds) {
+    if (!allowedTemplateIds.has(tid)) {
+      throw new Error(
+        `TEMPLATE_NOT_ALLOWED_FOR_STAGE: Template ${tid} is not configured for stage ${body.pipeline_stage_id}`,
+      );
+    }
+  }
+
   // Verify application exists
   const { data: app, error: appError } = await ctx.supabaseAdmin
     .from('applications')
@@ -189,53 +213,76 @@ export async function createInterview(
 
       // Retry safety: skip eval instance creation if already set
       if (!roundRecord.evaluation_instance_id) {
-        // Create evaluation instance for this round
-        const { data: evalInstance, error: evalError } = await ctx.supabaseAdmin
-          .from('evaluation_instances')
-          .insert({
-            tenant_id: ctx.tenantId,
-            application_id: applicationId,
-            template_id: roundDTO.evaluation_template_id,
-            stage_id: interviewRecord.pipeline_stage_id,
-            status: 'PENDING',
-            created_by: ctx.userId,
-          })
-          .select()
-          .single();
+        // Find-or-create: ensure_stage_evaluations may have already created
+        // a PENDING instance with the same unique key
+        // (tenant_id, application_id, template_id, stage_id)
+        let evalInstanceId: string;
 
-        if (evalError) {
-          throw new Error(`Failed to create evaluation instance: ${evalError.message}`);
+        const { data: existingInstance } = await ctx.supabaseAdmin
+          .from('evaluation_instances')
+          .select('id, status')
+          .eq('tenant_id', ctx.tenantId)
+          .eq('application_id', applicationId)
+          .eq('template_id', roundDTO.evaluation_template_id)
+          .eq('stage_id', interviewRecord.pipeline_stage_id)
+          .maybeSingle();
+
+        if (existingInstance) {
+          evalInstanceId = existingInstance.id;
+        } else {
+          // No existing instance — create one
+          const { data: evalInstance, error: evalError } = await ctx.supabaseAdmin
+            .from('evaluation_instances')
+            .insert({
+              tenant_id: ctx.tenantId,
+              application_id: applicationId,
+              template_id: roundDTO.evaluation_template_id,
+              stage_id: interviewRecord.pipeline_stage_id,
+              status: 'PENDING',
+              created_by: ctx.userId,
+            })
+            .select()
+            .single();
+
+          if (evalError) {
+            throw new Error(`Failed to create evaluation instance: ${evalError.message}`);
+          }
+
+          evalInstanceId = evalInstance.id;
+          createdEvalInstanceIds.push(evalInstanceId);
         }
 
-        createdEvalInstanceIds.push(evalInstance.id);
-
-        // Create evaluation participants — one per interviewer
+        // Idempotent participant insert — upsert ignores duplicates on
+        // unique constraint (evaluation_id, user_id)
         const participantInserts = roundDTO.interviewer_ids.map((userId) => ({
           tenant_id: ctx.tenantId,
-          evaluation_id: evalInstance.id,
+          evaluation_id: evalInstanceId,
           user_id: userId,
           status: 'PENDING',
         }));
 
         const { error: partError } = await ctx.supabaseAdmin
           .from('evaluation_participants')
-          .insert(participantInserts);
+          .upsert(participantInserts, {
+            onConflict: 'evaluation_id,user_id',
+            ignoreDuplicates: true,
+          });
 
         if (partError) {
           throw new Error(`Failed to create evaluation participants: ${partError.message}`);
         }
 
-        // Link round to evaluation instance
+        // Link round to evaluation instance (only if not already linked)
         const { error: linkError } = await ctx.supabaseAdmin
           .from('interview_rounds')
-          .update({ evaluation_instance_id: evalInstance.id })
+          .update({ evaluation_instance_id: evalInstanceId })
           .eq('id', roundRecord.id);
 
         if (linkError) {
           throw new Error(`Failed to link round to evaluation instance: ${linkError.message}`);
         }
 
-        roundRecord.evaluation_instance_id = evalInstance.id;
+        roundRecord.evaluation_instance_id = evalInstanceId;
       }
 
       roundResponses.push(
@@ -285,9 +332,7 @@ export async function listInterviews(ctx: HandlerContext): Promise<Response> {
     throw new Error(`Failed to fetch interviews: ${error.message}`);
   }
 
-  const formatted = (data || []).map((i: InterviewRecord) =>
-    formatInterviewResponse(i),
-  );
+  const formatted = (data || []).map((i: InterviewRecord) => formatInterviewResponse(i));
 
   return jsonResponse({ data: formatted });
 }
@@ -515,8 +560,7 @@ export async function listMyPending(ctx: HandlerContext): Promise<Response> {
 
   // Filter out assignments whose interviews are cancelled/missing
   const activePending = pendingAssignments.filter(
-    (a: { round: InterviewRoundRecord }) =>
-      interviewMap.has(a.round.interview_id),
+    (a: { round: InterviewRoundRecord }) => interviewMap.has(a.round.interview_id),
   );
 
   if (activePending.length === 0) {
@@ -525,14 +569,20 @@ export async function listMyPending(ctx: HandlerContext): Promise<Response> {
 
   // Step 5: Round completion — batch-fetch all assignments and evaluation participants
   const pendingRoundIds = [...new Set(activePending.map((a: { round_id: string }) => a.round_id))];
-  const pendingRoundEvalIds = [...new Set(
-    activePending
-      .map((a: { round: InterviewRoundRecord }) => a.round.evaluation_instance_id)
-      .filter((id: string | null): id is string => id !== null),
-  )];
+  const pendingRoundEvalIds = [
+    ...new Set(
+      activePending
+        .map((a: { round: InterviewRoundRecord }) => a.round.evaluation_instance_id)
+        .filter((id: string | null): id is string => id !== null),
+    ),
+  ];
 
   const allRoundAssignments = await batchIn<{ round_id: string; user_id: string }>(
-    ctx.supabaseAdmin, 'interviewer_assignments', 'round_id', pendingRoundIds, 'round_id, user_id',
+    ctx.supabaseAdmin,
+    'interviewer_assignments',
+    'round_id',
+    pendingRoundIds,
+    'round_id, user_id',
   );
 
   // Fetch all evaluation participants for these eval instances to determine round completion
@@ -571,19 +621,31 @@ export async function listMyPending(ctx: HandlerContext): Promise<Response> {
   }
 
   // Step 6: Display enrichment — batch-fetch applications, jobs, pipeline_stages
-  const applicationIds = [...new Set(
-    (interviews || []).map((i: InterviewRecord) => i.application_id),
-  )];
-  const stageIds = [...new Set(
-    (interviews || []).map((i: InterviewRecord) => i.pipeline_stage_id),
-  )];
+  const applicationIds = [
+    ...new Set(
+      (interviews || []).map((i: InterviewRecord) => i.application_id),
+    ),
+  ];
+  const stageIds = [
+    ...new Set(
+      (interviews || []).map((i: InterviewRecord) => i.pipeline_stage_id),
+    ),
+  ];
 
   const [appRows, stageRows] = await Promise.all([
     batchIn<{ id: string; applicant_name: string; job_id: string }>(
-      ctx.supabaseAdmin, 'applications', 'id', applicationIds, 'id, applicant_name, job_id',
+      ctx.supabaseAdmin,
+      'applications',
+      'id',
+      applicationIds,
+      'id, applicant_name, job_id',
     ),
     batchIn<{ id: string; stage_name: string }>(
-      ctx.supabaseAdmin, 'pipeline_stages', 'id', stageIds, 'id, stage_name',
+      ctx.supabaseAdmin,
+      'pipeline_stages',
+      'id',
+      stageIds,
+      'id, stage_name',
     ),
   ]);
 
@@ -591,12 +653,18 @@ export async function listMyPending(ctx: HandlerContext): Promise<Response> {
   const stageMap = new Map(stageRows.map((s) => [s.id, s.stage_name]));
 
   // Collect job IDs from resolved applications, then batch-fetch jobs
-  const jobIds = [...new Set(
-    appRows.map((a) => a.job_id).filter(Boolean),
-  )];
+  const jobIds = [
+    ...new Set(
+      appRows.map((a) => a.job_id).filter(Boolean),
+    ),
+  ];
 
   const jobRows = await batchIn<{ id: string; title: string }>(
-    ctx.supabaseAdmin, 'jobs', 'id', jobIds, 'id, title',
+    ctx.supabaseAdmin,
+    'jobs',
+    'id',
+    jobIds,
+    'id, title',
   );
   const jobMap = new Map(jobRows.map((j) => [j.id, j.title]));
 
@@ -645,17 +713,20 @@ export async function listMyPending(ctx: HandlerContext): Promise<Response> {
 
   if (missingApps.length > 0) {
     console.error('Missing applications during /my-pending enrichment', {
-      count: missingApps.length, sample: missingApps.slice(0, 3),
+      count: missingApps.length,
+      sample: missingApps.slice(0, 3),
     });
   }
   if (missingJobs.length > 0) {
     console.error('Missing jobs during /my-pending enrichment', {
-      count: missingJobs.length, sample: missingJobs.slice(0, 3),
+      count: missingJobs.length,
+      sample: missingJobs.slice(0, 3),
     });
   }
   if (missingStages.length > 0) {
     console.error('Missing pipeline stages during /my-pending enrichment', {
-      count: missingStages.length, sample: missingStages.slice(0, 3),
+      count: missingStages.length,
+      sample: missingStages.slice(0, 3),
     });
   }
 

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // Get tenant ID from JWT claims or X-Tenant-ID header
 export async function getTenantIdFromAuth(
   req: Request,
-  supabaseUser: SupabaseClient
+  supabaseUser: SupabaseClient,
 ): Promise<string> {
   // First try X-Tenant-ID header (for backward compatibility and local dev)
   const headerTenantId = req.headers.get('X-Tenant-ID');
@@ -32,7 +32,7 @@ export async function getTenantIdFromAuth(
 
 // Get user info from JWT token
 export async function getUserFromToken(
-  supabaseUser: SupabaseClient
+  supabaseUser: SupabaseClient,
 ): Promise<{ id: string; role: string; tenantId: string | null } | null> {
   const { data: { user }, error } = await supabaseUser.auth.getUser();
   if (error || !user) return null;
@@ -60,4 +60,3 @@ export function canManageInterviews(role: string): boolean {
 export function canViewInterviews(role: string): boolean {
   return ['SUPERADMIN', 'ADMIN', 'HR', 'INTERVIEWER'].includes(role);
 }
-

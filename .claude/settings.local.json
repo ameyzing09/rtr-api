@@ -19,7 +19,14 @@
       "Bash(then)",
       "Bash(echo:*)",
       "Bash(fi)",
-      "Bash(done)"
+      "Bash(done)",
+      "mcp__supabase__list_migrations",
+      "Bash(dir:*)",
+      "mcp__supabase__execute_sql",
+      "Bash(deno --version:*)",
+      "Bash(deno lint:*)",
+      "Bash(deno check:*)",
+      "Bash(deno task:*)"
     ],
     "deny": [],
     "ask": []

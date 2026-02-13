@@ -1,11 +1,11 @@
 import type {
+  CreateStageEvaluationDTO,
   HandlerContext,
   StageEvaluationRecord,
   StageEvaluationResponse,
-  CreateStageEvaluationDTO,
   UpdateStageEvaluationDTO,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -14,7 +14,7 @@ import { jsonResponse, isValidUUID } from '../utils.ts';
 function formatStageEvaluationResponse(
   record: StageEvaluationRecord,
   templateName?: string,
-  stageName?: string
+  stageName?: string,
 ): StageEvaluationResponse {
   return {
     id: record.id,
@@ -77,7 +77,7 @@ export async function listStageEvaluations(ctx: HandlerContext): Promise<Respons
     return formatStageEvaluationResponse(
       d as unknown as StageEvaluationRecord,
       template?.name,
-      stage?.stage_name
+      stage?.stage_name,
     );
   });
 
@@ -87,7 +87,7 @@ export async function listStageEvaluations(ctx: HandlerContext): Promise<Respons
 // POST /settings/stage-evaluations
 export async function createStageEvaluation(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const body: CreateStageEvaluationDTO = await req.json();
 
@@ -148,17 +148,17 @@ export async function createStageEvaluation(
       data: formatStageEvaluationResponse(
         data as StageEvaluationRecord,
         (template as { name: string }).name,
-        (stage as { stage_name: string }).stage_name
+        (stage as { stage_name: string }).stage_name,
       ),
     },
-    201
+    201,
   );
 }
 
 // PATCH /settings/stage-evaluations/:id
 export async function updateStageEvaluation(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const stageEvalId = ctx.pathParts[2];
 
@@ -212,7 +212,7 @@ export async function updateStageEvaluation(
     data: formatStageEvaluationResponse(
       updated as unknown as StageEvaluationRecord,
       template?.name,
-      stage?.stage_name
+      stage?.stage_name,
     ),
   });
 }
@@ -252,7 +252,7 @@ export async function deleteStageEvaluation(ctx: HandlerContext): Promise<Respon
 
     if (count && count > 0) {
       throw new Error(
-        `Cannot deactivate: ${count} active evaluation instance(s) exist for this stage+template combo. Use ?force=true to override.`
+        `Cannot deactivate: ${count} active evaluation instance(s) exist for this stage+template combo. Use ?force=true to override.`,
       );
     }
   }

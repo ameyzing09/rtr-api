@@ -49,7 +49,9 @@ export function handleError(error: unknown): Response {
   } else if (message.includes('Unauthorized') || message.includes('Invalid or missing token')) {
     status = 401;
     code = 'unauthorized';
-  } else if (message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')) {
+  } else if (
+    message.includes('Forbidden') || message.includes('Missing permission') || message.includes('role required')
+  ) {
     status = 403;
     code = 'forbidden';
   } else if (message.includes('already') || message.includes('duplicate') || message.includes('conflict')) {

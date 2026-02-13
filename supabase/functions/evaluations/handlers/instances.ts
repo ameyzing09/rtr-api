@@ -1,13 +1,17 @@
 import type {
-  HandlerContext,
-  EvaluationTemplateRecord,
+  CompleteEvaluationDTO,
+  CreateEvaluationInstanceDTO,
+  EvaluationDetailParticipant,
+  EvaluationDetailResponse,
+  EvaluationDetailSignal,
   EvaluationInstanceRecord,
   EvaluationInstanceResponse,
+  EvaluationTemplateRecord,
+  HandlerContext,
   MyPendingEvaluationResponse,
-  CreateEvaluationInstanceDTO,
-  CompleteEvaluationDTO,
+  SignalDefinition,
 } from '../types.ts';
-import { jsonResponse, isValidUUID } from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Format functions
@@ -18,7 +22,7 @@ function formatInstanceResponse(
   templateName?: string,
   stageName?: string | null,
   participantCount?: number,
-  submittedCount?: number
+  submittedCount?: number,
 ): EvaluationInstanceResponse {
   return {
     id: record.id,
@@ -123,7 +127,7 @@ export async function listApplicationEvaluations(ctx: HandlerContext): Promise<R
       template?.name,
       stage?.stage_name || null,
       counts.total,
-      counts.submitted
+      counts.submitted,
     );
   });
 
@@ -133,7 +137,7 @@ export async function listApplicationEvaluations(ctx: HandlerContext): Promise<R
 // POST /applications/:id/evaluations
 export async function createEvaluation(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const applicationId = ctx.pathParts[1];
 
@@ -207,16 +211,16 @@ export async function createEvaluation(
     {
       data: formatInstanceResponse(
         instance as EvaluationInstanceRecord,
-        (template as EvaluationTemplateRecord).name
+        (template as EvaluationTemplateRecord).name,
       ),
     },
-    201
+    201,
   );
 }
 
 // POST /evaluations/:id/cancel
 export async function cancelEvaluation(ctx: HandlerContext): Promise<Response> {
-  const evaluationId = ctx.pathParts[1];
+  const evaluationId = ctx.pathParts[0];
 
   if (!isValidUUID(evaluationId)) {
     throw new Error('Invalid evaluation ID format');
@@ -260,9 +264,9 @@ export async function cancelEvaluation(ctx: HandlerContext): Promise<Response> {
 // POST /evaluations/:id/complete
 export async function completeEvaluation(
   ctx: HandlerContext,
-  req: Request
+  req: Request,
 ): Promise<Response> {
-  const evaluationId = ctx.pathParts[1];
+  const evaluationId = ctx.pathParts[0];
 
   if (!isValidUUID(evaluationId)) {
     throw new Error('Invalid evaluation ID format');
@@ -351,8 +355,137 @@ export async function listMyPendingEvaluations(ctx: HandlerContext): Promise<Res
         participantStatus: 'PENDING' as const,
         createdAt: d.created_at as string,
       };
-    }
+    },
   );
 
   return jsonResponse({ data: formatted });
+}
+
+// GET /evaluations/:id - Get evaluation detail (for EvaluationForm)
+export async function getEvaluationDetail(ctx: HandlerContext): Promise<Response> {
+  const evaluationId = ctx.pathParts[0];
+
+  if (!isValidUUID(evaluationId)) {
+    throw new Error('Invalid evaluation ID format');
+  }
+
+  // Query 1: Fetch evaluation instance with template (join)
+  const { data: evalData, error: evalError } = await ctx.supabaseAdmin
+    .from('evaluation_instances')
+    .select(`
+      *,
+      evaluation_templates!inner (
+        id,
+        name,
+        signal_schema
+      )
+    `)
+    .eq('id', evaluationId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (evalError || !evalData) {
+    throw new Error('Evaluation not found');
+  }
+
+  const instance = evalData as EvaluationInstanceRecord & {
+    evaluation_templates: { id: string; name: string; signal_schema: SignalDefinition[] };
+  };
+
+  // Authorization: ADMIN/HR/SUPERADMIN can access any evaluation in their tenant.
+  // INTERVIEWER must be a participant.
+  const role = ctx.userRole || '';
+  if (!['SUPERADMIN', 'ADMIN', 'HR'].includes(role)) {
+    const { data: participantCheck } = await ctx.supabaseAdmin
+      .from('evaluation_participants')
+      .select('id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('evaluation_id', evaluationId)
+      .eq('user_id', ctx.userId!)
+      .maybeSingle();
+
+    if (!participantCheck) {
+      throw new Error('Forbidden: You are not a participant of this evaluation');
+    }
+  }
+
+  const template = instance.evaluation_templates;
+
+  // Map signal definitions from DB schema to API format
+  function mapSignalType(dbType: string): string {
+    if (dbType === 'integer' || dbType === 'float') return 'numeric';
+    if (dbType === 'boolean') return 'boolean';
+    if (dbType === 'text') return 'text';
+    return 'text'; // safe fallback
+  }
+
+  const signals: EvaluationDetailSignal[] = (template.signal_schema || []).map(
+    (signal: SignalDefinition) => {
+      const mappedType = mapSignalType(signal.type);
+      const result: EvaluationDetailSignal = {
+        id: `${template.id}:${signal.key}`,
+        key: signal.key,
+        label: signal.label,
+        type: mappedType,
+        required: Boolean(signal.required ?? false),
+      };
+      if (mappedType === 'numeric' && (signal.min != null || signal.max != null)) {
+        result.scale = { min: signal.min ?? null, max: signal.max ?? null };
+      }
+      return result;
+    },
+  );
+
+  // Query 2: Fetch participants
+  type ParticipantRow = { user_id: string; status: string };
+
+  const { data: participants, error: partError } = await ctx.supabaseAdmin
+    .from('evaluation_participants')
+    .select('user_id, status')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('evaluation_id', evaluationId)
+    .order('created_at', { ascending: true });
+
+  if (partError) {
+    throw new Error(`Failed to fetch participants: ${partError.message}`);
+  }
+
+  const rows = (participants ?? []) as ParticipantRow[];
+
+  // Query 3: Batch-fetch user names
+  type ProfileRow = { id: string; name: string | null };
+  const userIds = Array.from(new Set(rows.map((p) => p.user_id)));
+  const nameById = new Map<string, string>();
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profError } = await ctx.supabaseAdmin
+      .from('user_profiles')
+      .select('id, name')
+      .eq('tenant_id', ctx.tenantId)
+      .in('id', userIds);
+
+    if (profError) {
+      throw new Error(`Failed to fetch user profiles: ${profError.message}`);
+    }
+
+    for (const pr of (profiles ?? []) as ProfileRow[]) {
+      if (pr.name) nameById.set(pr.id, pr.name);
+    }
+  }
+
+  const participantList: EvaluationDetailParticipant[] = rows.map((r) => ({
+    userId: r.user_id,
+    userName: nameById.get(r.user_id),
+    status: r.status as EvaluationDetailParticipant['status'],
+  }));
+
+  const response: EvaluationDetailResponse = {
+    id: instance.id,
+    status: instance.status,
+    template: { id: template.id, name: template.name },
+    signals,
+    participants: participantList,
+  };
+
+  return jsonResponse({ data: response });
 }

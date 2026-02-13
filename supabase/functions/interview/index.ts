@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
 import { corsResponse, handleError, jsonResponse, textResponse } from './utils.ts';
-import { getTenantIdFromAuth, getUserFromToken, canViewInterviews, canManageInterviews } from './middleware.ts';
+import { canManageInterviews, canViewInterviews, getTenantIdFromAuth, getUserFromToken } from './middleware.ts';
 import type { HandlerContext } from './types.ts';
 
 // Import handlers
@@ -117,7 +117,6 @@ Deno.serve(async (req: Request) => {
       message: 'Endpoint not found',
       status_code: 404,
     }, 404);
-
   } catch (error) {
     return handleError(error);
   }

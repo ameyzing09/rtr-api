@@ -125,7 +125,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // GET /admin/tenant/:id/archived - Get archived tenant
-    if (method === 'GET' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'archived' && pathParts.length === 4) {
+    if (
+      method === 'GET' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'archived' &&
+      pathParts.length === 4
+    ) {
       return await tenantHandlers.getArchivedTenant(ctx);
     }
 
@@ -157,27 +160,42 @@ Deno.serve(async (req: Request) => {
     // ==================== SUBSCRIPTION ROUTES ====================
 
     // GET /admin/tenant/:id/subscription - Get subscription
-    if (method === 'GET' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' && pathParts.length === 4) {
+    if (
+      method === 'GET' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' &&
+      pathParts.length === 4
+    ) {
       return await subscriptionHandlers.getSubscription(ctx);
     }
 
     // POST /admin/tenant/:id/subscription/activate
-    if (method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' && pathParts[4] === 'activate') {
+    if (
+      method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' &&
+      pathParts[4] === 'activate'
+    ) {
       return await subscriptionHandlers.activateSubscription(ctx, req);
     }
 
     // POST /admin/tenant/:id/subscription/suspend
-    if (method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' && pathParts[4] === 'suspend') {
+    if (
+      method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' &&
+      pathParts[4] === 'suspend'
+    ) {
       return await subscriptionHandlers.suspendSubscription(ctx);
     }
 
     // POST /admin/tenant/:id/subscription/resume
-    if (method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' && pathParts[4] === 'resume') {
+    if (
+      method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' &&
+      pathParts[4] === 'resume'
+    ) {
       return await subscriptionHandlers.resumeSubscription(ctx);
     }
 
     // POST /admin/tenant/:id/subscription/cancel
-    if (method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' && pathParts[4] === 'cancel') {
+    if (
+      method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'tenant' && pathParts[3] === 'subscription' &&
+      pathParts[4] === 'cancel'
+    ) {
       return await subscriptionHandlers.cancelSubscription(ctx);
     }
 
@@ -199,13 +217,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // POST /admin/users/:id/reset-password
-    if (method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'users' && pathParts[3] === 'reset-password') {
+    if (
+      method === 'POST' && pathParts[0] === 'admin' && pathParts[1] === 'users' && pathParts[3] === 'reset-password'
+    ) {
       return await adminHandlers.resetUserPassword(ctx, req);
     }
 
     // 404 - Not found
     return jsonResponse({ code: 'not_found', message: 'Endpoint not found' }, 404);
-
   } catch (error) {
     return handleError(error);
   }

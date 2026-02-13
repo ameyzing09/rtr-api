@@ -33,11 +33,11 @@ export async function listAllUsers(ctx: HandlerContext): Promise<Response> {
 
   // Create email lookup map
   const emailMap = new Map<string, string>(
-    authUsers?.users?.map(u => [u.id, u.email || '']) || []
+    authUsers?.users?.map((u) => [u.id, u.email || '']) || [],
   );
 
   // Merge email into profiles
-  const usersWithEmail = (data || []).map(profile => ({
+  const usersWithEmail = (data || []).map((profile) => ({
     ...profile,
     email: emailMap.get(profile.id) || null,
   }));

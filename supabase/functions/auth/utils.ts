@@ -36,7 +36,9 @@ export function handleError(error: unknown): Response {
   } else if (err.message.includes('not found') || err.message.includes('No rows')) {
     status = 404;
     code = 'not_found';
-  } else if (err.message.includes('already exists') || err.message.includes('duplicate') || err.message.includes('unique')) {
+  } else if (
+    err.message.includes('already exists') || err.message.includes('duplicate') || err.message.includes('unique')
+  ) {
     status = 409;
     code = 'conflict';
   } else if (err.message.includes('Invalid credentials')) {

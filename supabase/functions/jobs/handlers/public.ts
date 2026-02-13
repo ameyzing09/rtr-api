@@ -1,22 +1,25 @@
 import type {
   HandlerContext,
   JobRecord,
-  PublicJobsResponse,
-  PublicJobDetailDto,
   PublicApplicationStatusResponse,
+  PublicJobDetailDto,
+  PublicJobsResponse,
 } from '../types.ts';
-import { formatPublicJobDto, formatPublicJobDetailDto, attachToTrackingService } from '../utils.ts';
+import { attachToTrackingService, formatPublicJobDetailDto, formatPublicJobDto } from '../utils.ts';
 import { jsonResponse } from '../../_shared/cors.ts';
 
 // GET /public/jobs - List public jobs
-export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise<Response> {
+export async function listPublicJobs(ctx: HandlerContext, _req: Request): Promise<Response> {
   const params = Object.fromEntries(ctx.url.searchParams);
   const now = new Date().toISOString();
 
   // Build query for public jobs
   let query = ctx.supabaseAdmin
     .from('jobs')
-    .select('id, tenant_id, title, department, location, description, extra, is_public, publish_at, expire_at, updated_at', { count: 'exact' })
+    .select(
+      'id, tenant_id, title, department, location, description, extra, is_public, publish_at, expire_at, updated_at',
+      { count: 'exact' },
+    )
     .eq('tenant_id', ctx.tenantId)
     .eq('is_public', true)
     .lte('publish_at', now)
@@ -27,7 +30,9 @@ export async function listPublicJobs(ctx: HandlerContext, req: Request): Promise
   if (params.search) {
     const escapedSearch = params.search.replace(/%/g, '\\%').replace(/_/g, '\\_');
     const searchTerm = `%${escapedSearch}%`;
-    query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm},department.ilike.${searchTerm},location.ilike.${searchTerm}`);
+    query = query.or(
+      `title.ilike.${searchTerm},description.ilike.${searchTerm},department.ilike.${searchTerm},location.ilike.${searchTerm}`,
+    );
   }
 
   // Department filter
@@ -65,7 +70,9 @@ export async function getPublicJobById(ctx: HandlerContext): Promise<Response> {
 
   const { data: job, error } = await ctx.supabaseAdmin
     .from('jobs')
-    .select('id, tenant_id, title, department, location, description, extra, is_public, publish_at, expire_at, updated_at')
+    .select(
+      'id, tenant_id, title, department, location, description, extra, is_public, publish_at, expire_at, updated_at',
+    )
     .eq('id', jobId)
     .eq('tenant_id', ctx.tenantId)
     .single();
@@ -130,9 +137,9 @@ export async function applyToJob(ctx: HandlerContext, req: Request): Promise<Res
   }
 
   // Extract IP and user-agent for audit
-  const ipAddress = req.headers.get('x-forwarded-for')
-    || req.headers.get('x-real-ip')
-    || 'unknown';
+  const ipAddress = req.headers.get('x-forwarded-for') ||
+    req.headers.get('x-real-ip') ||
+    'unknown';
   const userAgent = req.headers.get('user-agent') || 'unknown';
 
   // Call atomic RPC
@@ -187,7 +194,7 @@ export async function applyToJob(ctx: HandlerContext, req: Request): Promise<Res
       status: 'PENDING',
       candidate_access_token: result.access_token,
     },
-    result.is_new ? 201 : 200
+    result.is_new ? 201 : 200,
   );
 }
 

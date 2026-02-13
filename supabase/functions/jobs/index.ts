@@ -1,11 +1,7 @@
-import { corsResponse, jsonResponse, corsHeaders } from '../_shared/cors.ts';
+import { corsHeaders, corsResponse, jsonResponse } from '../_shared/cors.ts';
 import { getSupabaseAdmin, getSupabaseClient } from '../_shared/supabase.ts';
 import { handleError } from './utils.ts';
-import {
-  getTenantIdFromAuth,
-  resolveTenantFromHost,
-  getUserFromToken,
-} from './middleware.ts';
+import { getTenantIdFromAuth, getUserFromToken, resolveTenantFromHost } from './middleware.ts';
 import type { HandlerContext } from './types.ts';
 
 // Import handlers
@@ -127,9 +123,7 @@ Deno.serve(async (req: Request) => {
         // Fall through to applications routes
       } else if (jobIdPath) {
         // Normalize pathParts for handlers (ensure jobId is at index 1)
-        const normalizedParts = pathParts[0] === 'job'
-          ? pathParts
-          : ['job', ...pathParts];
+        const normalizedParts = pathParts[0] === 'job' ? pathParts : ['job', ...pathParts];
         ctx.pathParts = normalizedParts;
 
         // GET /job/:id/cascade-info - Get cascade deletion info

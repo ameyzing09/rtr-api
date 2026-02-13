@@ -1,15 +1,13 @@
 import type {
+  AvailableActionResponse,
+  EvaluationRequirement,
+  ExecuteActionDTO,
   HandlerContext,
   PipelineStageRecord,
-  ExecuteActionDTO,
-  AvailableActionResponse,
-  SignalConditions,
   SignalCondition,
+  SignalConditions,
 } from '../types.ts';
-import {
-  jsonResponse,
-  isValidUUID,
-} from '../utils.ts';
+import { isValidUUID, jsonResponse } from '../utils.ts';
 
 // ============================================================================
 // Type for RPC return (matches tracking_state_result composite type with v2 fields)
@@ -30,7 +28,7 @@ interface TrackingRpcResult {
 // Format RPC result to API response
 function formatRpcResult(
   result: TrackingRpcResult,
-  stage: PipelineStageRecord
+  stage: PipelineStageRecord,
 ) {
   return {
     id: result.id,
@@ -76,6 +74,10 @@ function handleRpcError(error: { code?: string; message?: string }): never {
   if (msg.includes('VALIDATION')) {
     const detail = msg.split(': ').slice(1).join(': ');
     throw new Error(`Bad request: ${detail}`);
+  }
+  if (msg.includes('EVALUATIONS_INCOMPLETE')) {
+    const detail = msg.split(': ').slice(1).join(': ');
+    throw new Error(`Evaluations incomplete: ${detail}`);
   }
   if (msg.includes('FEEDBACK_REQUIRED')) {
     const detail = msg.split(': ').slice(1).join(': ');
@@ -222,12 +224,12 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
   }
 
   const userCapabilities = new Set(
-    (capabilities || []).map((c: { capability: string }) => c.capability)
+    (capabilities || []).map((c: { capability: string }) => c.capability),
   );
 
   // Filter actions by user capabilities
   const capableActions = (actions || []).filter(
-    (a: { required_capability: string }) => userCapabilities.has(a.required_capability)
+    (a: { required_capability: string }) => userCapabilities.has(a.required_capability),
   );
 
   // Apply HOLD/ACTIVATE guards using outcome_type from state row
@@ -236,29 +238,67 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
       if (a.outcome_type === 'HOLD' && state.outcome_type !== 'ACTIVE') return false;
       if (a.outcome_type === 'ACTIVE' && state.outcome_type !== 'HOLD') return false;
       return true;
-    }
+    },
   );
 
-  // Check feedback status for actions that require it
-  let feedbackCount = 0;
-  const needsFeedbackCheck = contextualActions.some(
-    (a: { requires_feedback: boolean }) => a.requires_feedback
-  );
+  // Check evaluation completion for current stage (stage-level, not per-action)
+  const { data: requiredEvals, error: reqEvalsError } = await ctx.supabaseAdmin
+    .from('stage_evaluations')
+    .select('evaluation_template_id, execution_order, evaluation_templates!inner(id, name)')
+    .eq('stage_id', state.current_stage_id)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('required', true)
+    .eq('is_active', true)
+    .order('execution_order');
 
-  if (needsFeedbackCheck) {
-    const { count } = await ctx.supabaseAdmin
-      .from('stage_feedback')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.tenantId)
-      .eq('application_id', applicationId)
-      .eq('stage_name', currentStage.stage_name);
-
-    feedbackCount = count ?? 0;
+  if (reqEvalsError) {
+    throw new Error(`Failed to fetch stage evaluations: ${reqEvalsError.message}`);
   }
+
+  const { data: evalInstances, error: evalInstError } = await ctx.supabaseAdmin
+    .from('evaluation_instances')
+    .select('id, template_id, stage_id, status')
+    .eq('application_id', applicationId)
+    .eq('stage_id', state.current_stage_id)
+    .eq('tenant_id', ctx.tenantId);
+
+  if (evalInstError) {
+    throw new Error(`Failed to fetch evaluation instances: ${evalInstError.message}`);
+  }
+
+  const instanceByTemplateStage = new Map(
+    (evalInstances || []).map((
+      ei: { id: string; template_id: string; stage_id: string; status: string },
+    ) => [`${ei.template_id}:${ei.stage_id}`, { id: ei.id, status: ei.status }]),
+  );
+
+  const requiredEvaluations: EvaluationRequirement[] = (requiredEvals || []).map(
+    (
+      se: {
+        evaluation_template_id: string;
+        evaluation_templates: { id: string; name: string } | { id: string; name: string }[];
+      },
+    ) => {
+      const tmpl = Array.isArray(se.evaluation_templates) ? se.evaluation_templates[0] : se.evaluation_templates;
+      const instance = instanceByTemplateStage.get(
+        `${se.evaluation_template_id}:${state.current_stage_id}`,
+      );
+      return {
+        templateId: se.evaluation_template_id,
+        templateName: tmpl.name,
+        completed: instance?.status === 'COMPLETED',
+        instanceId: instance?.id ?? null,
+        instanceStatus: instance?.status ?? null,
+      };
+    },
+  );
+
+  const evaluationsComplete = requiredEvaluations.length === 0 ||
+    requiredEvaluations.every((e) => e.completed);
 
   // Get signal status for each action that has signal_conditions
   const actionsWithConditions = contextualActions.filter(
-    (a: { signal_conditions: unknown }) => a.signal_conditions !== null
+    (a: { signal_conditions: unknown }) => a.signal_conditions !== null,
   );
 
   // Batch fetch signal status for all actions with conditions
@@ -290,7 +330,6 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
       display_name: string;
       outcome_type: string | null;
       is_terminal: boolean;
-      requires_feedback: boolean;
       requires_notes: boolean;
       signal_conditions: { logic: string; conditions: unknown[] } | null;
     }) => {
@@ -310,13 +349,11 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
         displayName: a.display_name,
         outcomeType: a.outcome_type,
         isTerminal: a.is_terminal,
-        requiresFeedback: a.requires_feedback,
         requiresNotes: a.requires_notes,
-        feedbackSubmitted: a.requires_feedback ? feedbackCount > 0 : true,
         signalConditions,
         signalsMet: signalStatus ? signalStatus.signalsMet : true,
       };
-    }
+    },
   );
 
   return jsonResponse({
@@ -328,6 +365,8 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
       status: state.status,
       outcomeType: state.outcome_type,
       isTerminal: false,
+      evaluationsComplete,
+      requiredEvaluations,
       availableActions,
     },
   });

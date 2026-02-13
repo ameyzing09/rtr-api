@@ -1,6 +1,10 @@
 {
   "scripts": {
-    "deploy": "supabase functions deploy --no-verify-jwt"
+    "deploy": "supabase functions deploy --no-verify-jwt",
+    "deploy:app": "supabase functions deploy $1 --no-verify-jwt",
+    "lint:functions": "cd supabase && deno task lint",
+    "check:functions": "cd supabase && deno task check",
+    "fmt:functions": "cd supabase && deno task fmt"
   },
   "devDependencies": {
     "supabase": "^2.74.4"
