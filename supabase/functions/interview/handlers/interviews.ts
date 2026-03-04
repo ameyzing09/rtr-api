@@ -30,6 +30,7 @@ function formatInterviewResponse(record: InterviewRecord): InterviewResponse {
 function formatRoundResponse(
   round: InterviewRoundRecord,
   assignments: InterviewerAssignmentRecord[],
+  userNameMap: Map<string, string>,
 ): InterviewRoundResponse {
   return {
     id: round.id,
@@ -40,6 +41,7 @@ function formatRoundResponse(
     assignments: assignments.map((a) => ({
       id: a.id,
       userId: a.user_id,
+      userName: userNameMap.get(a.user_id) ?? 'Unknown',
       createdAt: a.created_at,
     })),
   };
@@ -139,6 +141,34 @@ export async function createInterview(
     }
   }
 
+  // Reject duplicate interviewer IDs within a single round
+  for (const round of body.rounds) {
+    const uniqueInterviewers = new Set(round.interviewer_ids);
+    if (uniqueInterviewers.size !== round.interviewer_ids.length) {
+      throw new Error(
+        `Round "${round.round_type}" has duplicate interviewer IDs`
+      );
+    }
+  }
+
+  // Reject duplicate (evaluation_template_id, interviewer_id) across rounds.
+  // Same interviewer + same template = shared eval instance + shared participant
+  // → submitting one round marks the other as submitted too.
+  const seen = new Set<string>();
+  for (const round of body.rounds) {
+    for (const interviewerId of round.interviewer_ids) {
+      const key = `${body.pipeline_stage_id}:${round.evaluation_template_id}:${interviewerId}`;
+      if (seen.has(key)) {
+        throw new Error(
+          'DUPLICATE_ROUND_ASSIGNMENT: Same interviewer cannot be assigned to multiple rounds ' +
+          'with the same evaluation template. Use different templates for different rounds, ' +
+          'or assign different interviewers.'
+        );
+      }
+      seen.add(key);
+    }
+  }
+
   // Verify application exists
   const { data: app, error: appError } = await ctx.supabaseAdmin
     .from('applications')
@@ -169,6 +199,20 @@ export async function createInterview(
 
   const interviewRecord = interview as InterviewRecord;
 
+  // Pre-fetch interviewer names for all rounds
+  const allInterviewerIds = [...new Set(body.rounds.flatMap((r) => r.interviewer_ids))];
+  const userNameMap = new Map<string, string>();
+  if (allInterviewerIds.length > 0) {
+    const { data: profiles } = await ctx.supabaseAdmin
+      .from('user_profiles')
+      .select('id, name')
+      .eq('tenant_id', ctx.tenantId)
+      .in('id', allInterviewerIds);
+    for (const p of profiles || []) {
+      userNameMap.set(p.id, p.name);
+    }
+  }
+
   // Insert rounds, assignments, and evaluation instances with rollback
   const roundResponses: InterviewRoundResponse[] = [];
   const createdEvalInstanceIds: string[] = [];
@@ -182,6 +226,7 @@ export async function createInterview(
           interview_id: interviewRecord.id,
           round_type: roundDTO.round_type.trim(),
           sequence: roundDTO.sequence,
+          evaluation_template_id: roundDTO.evaluation_template_id,
         })
         .select()
         .single();
@@ -213,47 +258,31 @@ export async function createInterview(
 
       // Retry safety: skip eval instance creation if already set
       if (!roundRecord.evaluation_instance_id) {
-        // Find-or-create: ensure_stage_evaluations may have already created
-        // a PENDING instance with the same unique key
-        // (tenant_id, application_id, template_id, stage_id)
-        let evalInstanceId: string;
-
-        const { data: existingInstance } = await ctx.supabaseAdmin
+        // Always create a new round-level eval instance with interview_round_id.
+        // Stage-level instances (interview_round_id IS NULL) are managed separately
+        // by ensure_stage_evaluations().
+        const { data: evalInstance, error: evalError } = await ctx.supabaseAdmin
           .from('evaluation_instances')
-          .select('id, status')
-          .eq('tenant_id', ctx.tenantId)
-          .eq('application_id', applicationId)
-          .eq('template_id', roundDTO.evaluation_template_id)
-          .eq('stage_id', interviewRecord.pipeline_stage_id)
-          .maybeSingle();
+          .insert({
+            tenant_id: ctx.tenantId,
+            application_id: applicationId,
+            template_id: roundDTO.evaluation_template_id,
+            stage_id: interviewRecord.pipeline_stage_id,
+            interview_round_id: roundRecord.id,
+            status: 'PENDING',
+            created_by: ctx.userId,
+          })
+          .select()
+          .single();
 
-        if (existingInstance) {
-          evalInstanceId = existingInstance.id;
-        } else {
-          // No existing instance — create one
-          const { data: evalInstance, error: evalError } = await ctx.supabaseAdmin
-            .from('evaluation_instances')
-            .insert({
-              tenant_id: ctx.tenantId,
-              application_id: applicationId,
-              template_id: roundDTO.evaluation_template_id,
-              stage_id: interviewRecord.pipeline_stage_id,
-              status: 'PENDING',
-              created_by: ctx.userId,
-            })
-            .select()
-            .single();
-
-          if (evalError) {
-            throw new Error(`Failed to create evaluation instance: ${evalError.message}`);
-          }
-
-          evalInstanceId = evalInstance.id;
-          createdEvalInstanceIds.push(evalInstanceId);
+        if (evalError) {
+          throw new Error(`Failed to create evaluation instance: ${evalError.message}`);
         }
 
-        // Idempotent participant insert — upsert ignores duplicates on
-        // unique constraint (evaluation_id, user_id)
+        const evalInstanceId = evalInstance.id;
+        createdEvalInstanceIds.push(evalInstanceId);
+
+        // Create participants from round's interviewer_ids
         const participantInserts = roundDTO.interviewer_ids.map((userId) => ({
           tenant_id: ctx.tenantId,
           evaluation_id: evalInstanceId,
@@ -272,7 +301,7 @@ export async function createInterview(
           throw new Error(`Failed to create evaluation participants: ${partError.message}`);
         }
 
-        // Link round to evaluation instance (only if not already linked)
+        // Link round to evaluation instance
         const { error: linkError } = await ctx.supabaseAdmin
           .from('interview_rounds')
           .update({ evaluation_instance_id: evalInstanceId })
@@ -286,7 +315,7 @@ export async function createInterview(
       }
 
       roundResponses.push(
-        formatRoundResponse(roundRecord, (assignments || []) as InterviewerAssignmentRecord[]),
+        formatRoundResponse(roundRecord, (assignments || []) as InterviewerAssignmentRecord[], userNameMap),
       );
     }
   } catch (error) {
@@ -379,10 +408,31 @@ export async function getInterview(ctx: HandlerContext): Promise<Response> {
 
   const allAssignments = (assignments || []) as InterviewerAssignmentRecord[];
 
+  // Build assignments map by round_id — O(n) instead of O(n²) filter
+  const assignmentsByRoundId = new Map<string, InterviewerAssignmentRecord[]>();
+  for (const a of allAssignments) {
+    if (!assignmentsByRoundId.has(a.round_id)) assignmentsByRoundId.set(a.round_id, []);
+    assignmentsByRoundId.get(a.round_id)!.push(a);
+  }
+
+  // Fetch interviewer names from user_profiles
+  const userIds = [...new Set(allAssignments.map((a) => a.user_id))];
+  const userNameMap = new Map<string, string>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await ctx.supabaseAdmin
+      .from('user_profiles')
+      .select('id, name')
+      .eq('tenant_id', ctx.tenantId)
+      .in('id', userIds);
+    for (const p of profiles || []) {
+      userNameMap.set(p.id, p.name);
+    }
+  }
+
   // Assemble round responses
   const roundResponses = roundRecords.map((round) => {
-    const roundAssignments = allAssignments.filter((a) => a.round_id === round.id);
-    return formatRoundResponse(round, roundAssignments);
+    const roundAssignments = assignmentsByRoundId.get(round.id) ?? [];
+    return formatRoundResponse(round, roundAssignments, userNameMap);
   });
 
   const response = formatInterviewResponse(interviewRecord);

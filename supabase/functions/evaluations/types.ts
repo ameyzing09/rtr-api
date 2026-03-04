@@ -56,6 +56,7 @@ export interface EvaluationInstanceRecord {
   application_id: string;
   template_id: string;
   stage_id: string | null;
+  interview_round_id: string | null;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   scheduled_at: string | null;
   completed_at: string | null;
@@ -256,9 +257,11 @@ export interface EvaluationDetailSignal {
 }
 
 export interface EvaluationDetailParticipant {
+  id: string;
   userId: string;
   userName?: string;
   status: 'PENDING' | 'SUBMITTED' | 'DECLINED';
+  submittedAt: string | null;
 }
 
 export interface EvaluationDetailResponse {

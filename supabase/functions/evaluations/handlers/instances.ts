@@ -90,6 +90,7 @@ export async function listApplicationEvaluations(ctx: HandlerContext): Promise<R
     `)
     .eq('tenant_id', ctx.tenantId)
     .eq('application_id', applicationId)
+    .is('interview_round_id', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -311,6 +312,7 @@ export async function listMyPendingEvaluations(ctx: HandlerContext): Promise<Res
   const evaluationIds = participantRows.map((p: { evaluation_id: string }) => p.evaluation_id);
 
   // Query 2: Get evaluation instances with template, stage, and application details
+  // Only stage-level evaluations — interview pending evals have their own endpoint
   const { data: evaluations, error: evalError } = await ctx.supabaseAdmin
     .from('evaluation_instances')
     .select(`
@@ -328,6 +330,7 @@ export async function listMyPendingEvaluations(ctx: HandlerContext): Promise<Res
     `)
     .eq('tenant_id', ctx.tenantId)
     .in('id', evaluationIds)
+    .is('interview_round_id', null)
     .in('status', ['PENDING', 'IN_PROGRESS'])
     .order('created_at', { ascending: false });
 
@@ -437,11 +440,11 @@ export async function getEvaluationDetail(ctx: HandlerContext): Promise<Response
   );
 
   // Query 2: Fetch participants
-  type ParticipantRow = { user_id: string; status: string };
+  type ParticipantRow = { id: string; user_id: string; status: string; submitted_at: string | null };
 
   const { data: participants, error: partError } = await ctx.supabaseAdmin
     .from('evaluation_participants')
-    .select('user_id, status')
+    .select('id, user_id, status, submitted_at')
     .eq('tenant_id', ctx.tenantId)
     .eq('evaluation_id', evaluationId)
     .order('created_at', { ascending: true });
@@ -474,9 +477,11 @@ export async function getEvaluationDetail(ctx: HandlerContext): Promise<Response
   }
 
   const participantList: EvaluationDetailParticipant[] = rows.map((r) => ({
+    id: r.id,
     userId: r.user_id,
     userName: nameById.get(r.user_id),
     status: r.status as EvaluationDetailParticipant['status'],
+    submittedAt: r.submitted_at,
   }));
 
   const response: EvaluationDetailResponse = {

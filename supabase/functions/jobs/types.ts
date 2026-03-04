@@ -74,26 +74,22 @@ export interface CascadeInfoResponse {
 }
 
 // Public API response types (snake_case - matches NestJS public endpoints)
-export interface PublicJobDto {
+interface PublicJobBase {
   id: string;
   title: string;
   department: string | null;
   location: string | null;
-  description_excerpt: string;
-  publish_at: string;
+  publish_at: string | null;
   updated_at: string;
   extra: Record<string, unknown> | null;
 }
 
-export interface PublicJobDetailDto {
-  id: string;
-  title: string;
-  department: string | null;
-  location: string | null;
+export interface PublicJobDto extends PublicJobBase {
+  description_excerpt: string;
+}
+
+export interface PublicJobDetailDto extends PublicJobBase {
   description: string | null;
-  publish_at: string;
-  updated_at: string;
-  extra: Record<string, unknown> | null;
 }
 
 export interface PublicJobsResponse {

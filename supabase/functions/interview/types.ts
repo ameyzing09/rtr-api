@@ -25,7 +25,7 @@ export interface InterviewRecord {
   tenant_id: string;
   application_id: string;
   pipeline_stage_id: string;
-  status: 'PLANNED' | 'IN_PROGRESS' | 'CANCELLED';
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -37,6 +37,7 @@ export interface InterviewRoundRecord {
   interview_id: string;
   round_type: string;
   sequence: number;
+  evaluation_template_id: string | null;
   evaluation_instance_id: string | null;
   created_at: string;
 }
@@ -76,6 +77,7 @@ export interface InterviewRoundResponse {
 export interface InterviewerAssignmentResponse {
   id: string;
   userId: string;
+  userName: string;
   createdAt: string;
 }
 

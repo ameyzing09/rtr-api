@@ -26,7 +26,8 @@
       "Bash(deno --version:*)",
       "Bash(deno lint:*)",
       "Bash(deno check:*)",
-      "Bash(deno task:*)"
+      "Bash(deno task:*)",
+      "mcp__supabase__get_advisors"
     ],
     "deny": [],
     "ask": []
