@@ -52,7 +52,7 @@ export function formatPublicJobDto(job: JobRecord): PublicJobDto {
     department: job.department,
     location: job.location,
     description_excerpt: createDescriptionExcerpt(job.description),
-    publish_at: job.publish_at || '',
+    publish_at: job.publish_at,
     updated_at: job.updated_at,
     extra: job.extra,
   };
@@ -66,7 +66,7 @@ export function formatPublicJobDetailDto(job: JobRecord): PublicJobDetailDto {
     department: job.department,
     location: job.location,
     description: job.description,
-    publish_at: job.publish_at || '',
+    publish_at: job.publish_at,
     updated_at: job.updated_at,
     extra: job.extra,
   };

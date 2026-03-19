@@ -248,6 +248,7 @@ export async function deleteStageEvaluation(ctx: HandlerContext): Promise<Respon
       .eq('tenant_id', ctx.tenantId)
       .eq('template_id', currentRecord.evaluation_template_id)
       .eq('stage_id', currentRecord.stage_id)
+      .is('interview_round_id', null)
       .in('status', ['PENDING', 'IN_PROGRESS']);
 
     if (count && count > 0) {

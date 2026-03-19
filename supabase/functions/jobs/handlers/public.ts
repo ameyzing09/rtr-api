@@ -22,7 +22,7 @@ export async function listPublicJobs(ctx: HandlerContext, _req: Request): Promis
     )
     .eq('tenant_id', ctx.tenantId)
     .eq('is_public', true)
-    .lte('publish_at', now)
+    .or(`publish_at.is.null,publish_at.lte.${now}`)
     .or(`expire_at.is.null,expire_at.gte.${now}`)
     .order('publish_at', { ascending: false });
 
@@ -86,7 +86,7 @@ export async function getPublicJobById(ctx: HandlerContext): Promise<Response> {
     throw new Error(`Job with ID ${jobId} not found`);
   }
 
-  if (!job.publish_at || job.publish_at > now) {
+  if (job.publish_at && job.publish_at > now) {
     throw new Error(`Job with ID ${jobId} not found`);
   }
 

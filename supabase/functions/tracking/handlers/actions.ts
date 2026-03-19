@@ -260,7 +260,8 @@ export async function getAvailableActions(ctx: HandlerContext): Promise<Response
     .select('id, template_id, stage_id, status')
     .eq('application_id', applicationId)
     .eq('stage_id', state.current_stage_id)
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .is('interview_round_id', null);
 
   if (evalInstError) {
     throw new Error(`Failed to fetch evaluation instances: ${evalInstError.message}`);

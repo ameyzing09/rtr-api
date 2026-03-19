@@ -54,6 +54,12 @@ export function handleError(error: unknown): Response {
   ) {
     status = 403;
     code = 'forbidden';
+  } else if (message.includes('DUPLICATE_ROUND_ASSIGNMENT')) {
+    status = 409;
+    code = 'duplicate_round_assignment';
+  } else if (message.includes('TEMPLATE_LOCKED')) {
+    status = 409;
+    code = 'template_locked';
   } else if (message.includes('already') || message.includes('duplicate') || message.includes('conflict')) {
     status = 409;
     code = 'conflict';
